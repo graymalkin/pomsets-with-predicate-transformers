@@ -76,12 +76,12 @@ type ast =
   | Unlock
 
 type expected_outcome =
-  Allow of string
-| Forbid of string
+    Allow of string
+  | Forbid of string
 
 type outcome =
-  Allowed of boolean_expr * expected_outcome list * comment option
-| Forbidden of boolean_expr * expected_outcome list * comment option
+    Allowed of boolean_expr * expected_outcome list * comment option
+  | Forbidden of boolean_expr * expected_outcome list * comment option
 
 let rec show_expr = function
     Number n -> string_of_int n

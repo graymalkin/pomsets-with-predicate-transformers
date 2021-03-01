@@ -1,3 +1,4 @@
 S src/**
 B _build/**
+PKG batteries ocamlgraph
 FLG -w A -w -42 -w -4 -w -32

@@ -3,7 +3,9 @@ open Parse
 
 let run filename =
   let _config, ast, _outcomes = parse filename in
-  Format.fprintf Format.std_formatter "%a\n" AST.pp_ast ast
+  Format.fprintf Format.std_formatter "%a\n" AST.pp_ast ast;
+  ignore @@ Interp.interp ast;
+  ()
 
 let args = Arg.align []
 
