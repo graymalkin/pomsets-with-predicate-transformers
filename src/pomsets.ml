@@ -1,8 +1,6 @@
 (** Entry point *)
-open Parse
-
 let run filename =
-  let _config, ast, _outcomes = parse filename in
+  let _config, ast, _outcomes = Parse.parse filename in
   Format.fprintf Format.std_formatter "%a\n" AST.pp_ast ast;
   ignore @@ Interp.interp ast;
   ()
