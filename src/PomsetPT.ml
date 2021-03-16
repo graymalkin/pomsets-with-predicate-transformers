@@ -56,6 +56,16 @@ let rec sub_sym phi s = function
   | Or  (f,f') -> Or  (sub_sym phi s f, sub_sym phi s f')
   | f -> f
 
+let rec sub_expr n e = function
+    EqExpr (e',x) when e' = e -> EqExpr (n,x)
+  | EqExpr (x,e') when e' = e -> EqExpr (x,n)
+  | EqVar  (l,e') when e' = e -> EqVar  (l,n)
+  | EqReg  (r,e') when e' = e -> EqReg  (r,n)
+  | Not f -> Not (sub_expr n e f)
+  | And (f,f') -> And (sub_expr n e f, sub_expr n e f')
+  | Or  (f,f') -> Or  (sub_expr n e f, sub_expr n e f')
+  | f -> f
+      
 let rec eval_formula = function
     EqExpr (e,e') -> eval_expr empty_env e = eval_expr empty_env e'
   | Not f -> not (eval_formula f)
@@ -101,4 +111,23 @@ let rec convert_dnf = function
   | Not (Or (f1, f2)) -> convert_dnf (And (Not f1, Not f2))
   | f -> f
 
-let entails _f1 _f2 = raise Not_implemented
+
+(* Strawman for chat with Simon. *)
+let rec eval_entails _f1 _f2 =
+  (* TODO: scrub contradictions from dnf? *)
+  let rec substitute f2 = function
+      And (f,f') -> substitute f' (substitute f f2)
+    | True  -> f2
+    | False -> True
+    | EqVar  (l,e) -> sub_loc  e l f2
+    | EqReg  (r,e) -> sub_reg  e r f2
+    | EqExpr (n,e) -> sub_expr n e f2            
+    | Not _ -> f2 (* TODO: this just drops negated formulae! *)
+    | Or _ -> raise (Invalid_argument "argument has Or")
+    | Symbol _ -> raise (Invalid_argument "argument has Symbol")
+  in
+  let rec eval_dnf = function
+    Or (f,f') -> (eval_dnf f) && (eval_dnf f')
+  | f -> eval_formula (substitute _f2 f)
+  in
+  eval_dnf (convert_dnf _f1)
