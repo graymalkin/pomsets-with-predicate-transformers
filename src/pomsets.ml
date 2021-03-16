@@ -1,4 +1,5 @@
-open PomsetPreconditions
+(*open PomsetPreconditions*)
+open PomsetPT
 
 let print_latex = ref false
 
@@ -8,7 +9,8 @@ let run filename =
   let config = Util.default RunConfig.default_configuration config in
   let vs = config.RunConfig.values in
   let ps = Pomset.interp vs ast in
-  PrintLatexDoc.pp_document Format.std_formatter config ast ps
+  PrintLatexDoc.pp_document Format.std_formatter config ast ps;
+  PomsetPT.test ()
 
 let args = Arg.align [
   ("--tex", Arg.Set print_latex, "  Use LaTeX output [default: false]")
