@@ -4,18 +4,17 @@ open Util
 
 type value = int
 type register = string [@@deriving show]
-
 type location = string [@@deriving show]
-              
+
 type scope = CTA | GPU | SYS
-type amode = WK | RLX | RA | SC
-type fmode = REL | ACQ | FSC
+type access_mode = Weak | Relaxed | RA | SC
+type fence_mode = Release | Acquire | FSC
                                  
 type event = int
 type action =
-  Write of amode * scope * location * value
-| Read  of amode * scope * location * value
-| Fence of fmode * scope
+  Write of access_mode * scope * location * value
+| Read  of access_mode * scope * location * value
+| Fence of fence_mode * scope
 
 type symbol =
   Write_sym
@@ -23,26 +22,28 @@ type symbol =
 [@@deriving show]
          
 type formula =
-  Eq_expr of expr * expr
-| Eq_var  of location * expr
-| Eq_reg  of register * expr (* TODO: James does not have this. *)
+  EqExpr of expr * expr
+| EqVar  of location * expr
+| EqReg  of register * expr (* TODO: James does not have this. *)
 | Symbol of symbol
 | Not of formula
 | And of formula * formula
 | Or of formula * formula
+| True
+| False
 [@@deriving show]
 
 
       
 let rec sub_reg e r = function
-  | Eq_reg (r',e') when r = r' -> Eq_expr (e,e')
+  | EqReg (r', e') when r = r' -> EqExpr (e,e')
   | Not f -> Not (sub_reg e r f)
   | And (f,f') -> And (sub_reg e r f, sub_reg e r f')
   | Or  (f,f') -> Or  (sub_reg e r f, sub_reg e r f')
   | f -> f
 
 let rec sub_loc e l = function
-  | Eq_var (l',e') when l = l' -> Eq_expr (e,e')
+  | EqVar (l',e') when l = l' -> EqExpr (e,e')
   | Not f -> Not (sub_loc e l f)
   | And (f,f') -> And (sub_loc e l f, sub_loc e l f')
   | Or  (f,f') -> Or  (sub_loc e l f, sub_loc e l f')
@@ -55,15 +56,12 @@ let rec sub_sym phi s = function
   | Or  (f,f') -> Or  (sub_sym phi s f, sub_sym phi s f')
   | f -> f
 
-
-      
-let rec evalf = function
-    Eq_expr (e,e') -> eval_expr empty_env e = eval_expr empty_env e'
-  | Not f -> not (evalf f)
-  | And (f,f') -> (evalf f) && (evalf f')
-  | Or (f,f') -> (evalf f) || (evalf f')
+let rec eval_formula = function
+    EqExpr (e,e') -> eval_expr empty_env e = eval_expr empty_env e'
+  | Not f -> not (eval_formula f)
+  | And (f,f') -> (eval_formula f) && (eval_formula f')
+  | Or (f,f') -> (eval_formula f) || (eval_formula f')
   | _ -> false
-
 
 let rec negate = function
     And (f1,f2) -> Or (negate f1, negate f2)
@@ -71,32 +69,36 @@ let rec negate = function
   | Not f -> f
   | f -> Not f
 
-       
-let rec convert_cnf = function (* TODO: this is not right! *)
-  | And (f1,f2) -> And (convert_cnf f1, convert_cnf f2)
-  | Or (f1,f2) -> And (convert_cnf (negate f1), convert_cnf (negate f2))
-  | Not f -> negate f
+let extract_conjunt_clauses = function
+  And (f1, f2) -> [f1;f2]
+| Or _ -> raise (Invalid_argument "argument not in DNF")
+| f -> [f]
+
+let extract_disjunt_clauses = function
+  Or (f1, f2) -> [f1;f2]
+| And _ -> raise (Invalid_argument "argument not in DNF")
+| f -> [f]
+
+let rec convert_cnf = function
+    And (f1, f2) -> And (convert_cnf f1, convert_cnf f2)
+  | Or (f1, f2) -> 
+    let ps = extract_conjunt_clauses (convert_cnf f1) in
+    let qs = extract_conjunt_clauses (convert_cnf f2) in
+    let ds = List.map (fun (p, q) -> Or (p, q)) (cross ps qs) in
+    concat_nonempty (fun p q -> And (p,q)) ds
+  | Not (And (f1, f2)) -> convert_cnf (Or (Not f1, Not f2))
+  | Not (Or (f1, f2)) -> convert_cnf (And (Not f1, Not f2))
   | f -> f
 
-let rec convert_dnf = function (* TODO: this is not right! *)
-  | And (f1,f2) -> Or (convert_dnf (negate f1), convert_dnf (negate f2))
-  | Or (f1,f2) -> Or (convert_dnf f1, convert_dnf f2)
-  | Not f -> negate f
+let rec convert_dnf = function
+    Or (f1, f2) -> Or (convert_dnf f1, convert_dnf f2)
+  | And (f1, f2) -> 
+    let ps = extract_disjunt_clauses (convert_dnf f1) in
+    let qs = extract_disjunt_clauses (convert_dnf f2) in
+    let cs = List.map (fun (p,q) -> And (p, q)) (cross ps qs) in
+    concat_nonempty (fun a b -> Or (a, b)) cs
+  | Not (And (f1, f2)) -> convert_dnf (Or (Not f1, Not f2))
+  | Not (Or (f1, f2)) -> convert_dnf (And (Not f1, Not f2))
   | f -> f
 
-
-let data1 = And (Or (Symbol Write_sym, Symbol Write_sym), Or (Symbol Write_sym, Symbol Write_sym))
-
-let data2 = convert_dnf data1
-
-let test () = pp_formula Format.std_formatter data2              
-
-
-                
-(*                 
-let rec entails f f' =
-match f with
-  Or (f1,f2) -> (entails f1 f') && (entails f2 f')
-| Not f1 -> entails (negate f1) f'
-| And (f1,f2) -> )
- *)
+let entails _f1 _f2 = raise Not_implemented

@@ -1,3 +1,5 @@
+exception Not_implemented
+
 let curry f a b = f (a, b)
 let uncurry f (a, b) = f a b
 
@@ -19,3 +21,9 @@ let (==>) = implies
 let rec repeat x = function
     0 -> []
   | n -> x :: repeat x (n-1)
+
+let rec concat_nonempty f = function
+  [l] -> l
+| a :: ls -> f a (concat_nonempty f ls)
+| [] -> raise (Invalid_argument "invariant broken")
+

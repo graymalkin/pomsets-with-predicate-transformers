@@ -1,5 +1,7 @@
 <src/**>: package(batteries, ocamlgraph, ppx_deriving.show, ppx_deriving.ord, ppx_deriving.eq, ppx_deriving_yojson, fmt)
 <src/**>: include
+<test/**> : package(batteries, ocamlgraph, ppx_deriving.show, ppx_deriving.ord, ppx_deriving.eq, ppx_deriving_yojson, fmt, ounit)
+<test/**> : include
 
 true: debug
 true: annot
