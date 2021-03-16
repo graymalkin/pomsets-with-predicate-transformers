@@ -14,6 +14,8 @@ let union a b =
   a @ ns
 let (<|>) = union
 
+let big_union ss = List.fold_left (<|>) [] ss
+
 let intersect a b =
   List.filter (fun x -> List.mem x a) b
 let (<&>) = intersect

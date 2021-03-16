@@ -42,7 +42,7 @@ open RunConfig
 
 %token EOF
 
-%left SEMICOLON
+%right SEMICOLON
 %left OR
 %left AND
 %nonassoc NOT
