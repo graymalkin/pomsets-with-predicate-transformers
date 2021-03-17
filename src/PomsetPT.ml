@@ -9,7 +9,8 @@ type location = string [@@deriving show]
 type scope = CTA | GPU | SYS
 type access_mode = Weak | Relaxed | RA | SC
 type fence_mode = Release | Acquire | FSC
-                                 
+type mode = Amode of access_mode | Fmode of fence_mode
+                                    
 type event = int
 type action =
   Write of access_mode * scope * location * value
@@ -111,7 +112,6 @@ let rec convert_dnf = function
   | Not (Or (f1, f2)) -> convert_dnf (And (Not f1, Not f2))
   | f -> f
 
-
 (* Strawman for chat with Simon. *)
 let rec eval_entails _f1 _f2 =
   (* TODO: scrub contradictions from dnf? *)
@@ -121,7 +121,7 @@ let rec eval_entails _f1 _f2 =
     | False -> True
     | EqVar  (l,e) -> sub_loc  e l f2
     | EqReg  (r,e) -> sub_reg  e r f2
-    | EqExpr (n,e) -> sub_expr n e f2            
+    | EqExpr (e,n) -> sub_expr n e f2            
     | Not _ -> f2 (* TODO: this just drops negated formulae! *)
     | Or _ -> raise (Invalid_argument "argument has Or")
     | Symbol _ -> raise (Invalid_argument "argument has Symbol")
@@ -131,3 +131,50 @@ let rec eval_entails _f1 _f2 =
   | f -> eval_formula (substitute _f2 f)
   in
   eval_dnf (convert_dnf _f1)
+
+let mode_order = function
+    (m,n) when m=n -> true  
+  | (Amode Weak,    _)
+  | (Amode Relaxed, Amode RA)
+  | (Amode Relaxed, Amode SC)
+  | (Amode Relaxed, Fmode _)
+  | (Amode RA,      Amode SC)
+  | (Amode RA,      Fmode _)
+  | (_,             Fmode FSC) -> true
+  | _ -> false
+
+let mode_lub (m,n) =
+  match (mode_order (m,n), mode_order (n,m)) with
+    (true, false) -> n
+  | (false,true)
+  | (true, true)  -> m
+  | (false,false) -> Fmode FSC
+
+(*                       
+let coalesce : (action * action) -> action list = function
+    (Read  m s l v, Read  m' s' l' v') when s=s' && l=l' && v=v' -> [Read  (mode_lub (m,m')) s l v]
+  | (Write m s l v, Write m' s' l' v') when s=s' && l=l'         -> [Write (mode_lub (m,m')) s l v']
+  | (Fence m s, Fence m' s')           when s=s'                 -> [Fence (mode_lub (m,m')) s]
+  | _                                -> []                                       
+
+
+let bowtie_co = function
+    (Read  _ _ _ _, Read  _ _ _  _) -> true
+  | (Write _ _ l _, Read  _ _ l' _)
+  | (Read  _ _ l _, Write _ _ l' _)
+  | (Write _ _ l _, Write _ _ l' _) -> l<>l'
+  | _ -> false
+
+let bowtie_sync = function
+  | (Write m _ _ _, Read  n _ _ _) -> m<>SC || n<>sc
+  | (Write _ _ _ _, Write n _ _ _) -> n=Relaxed
+  | (Read  m _ _ _, Write n _ _ _) -> m=Relaxed && n=Relaxed
+  | (Read  m _ _ _, Read  _ _ _ _) -> m=Relaxed
+  | (Fence m _    , Fence n _    ) -> m=Release && n=Acquire
+  | (Fence m _    , Read  _ _ _ _) -> m=Release
+  | (Write _ _ _ _, Fence n _    ) -> n=Acquire
+  | (Read  m _ _ _, Fence n _    ) -> m=Relaxed && n=Acquire (* TODO: Fence X not implemented. *)
+  | _ -> false
+
+let bowtie r = bowtie_co r && bowtie_sync r 
+                              *)
