@@ -131,8 +131,7 @@ let eval_entails f1 f2 =
   in
   let rec eval_dnf = function
     Or (f,f') -> (eval_dnf f) && (eval_dnf f')
-    | f -> Format.fprintf Format.std_formatter "%a\n" pp_formula (substitute f2 f);
-           eval_formula (substitute f2 f)
+    | f -> eval_formula (substitute f2 f)
   in
   eval_dnf (convert_dnf f1)
 
