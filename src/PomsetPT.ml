@@ -1,4 +1,3 @@
-open AST
 open Relation
 open Util
 
@@ -14,7 +13,7 @@ type mode = Amode of access_mode | Fmode of fence_mode
 type event = int
 type action =
   Write of access_mode * scope * location * value
-| Read  of access_mode * scope * location * value
+| Read of access_mode * scope * location * value
 | Fence of fence_mode * scope
 
 type symbol =
@@ -23,9 +22,9 @@ type symbol =
 [@@deriving show]
          
 type formula =
-  EqExpr of expr * expr
-| EqVar  of location * expr
-| EqReg  of register * expr (* TODO: James does not have this. *)
+  EqExpr of AST.expr * AST.expr
+| EqVar  of location * AST.expr
+| EqReg  of register * AST.expr (* TODO: James does not have this. *)
 | Symbol of symbol
 | Not of formula
 | And of formula * formula
@@ -33,8 +32,6 @@ type formula =
 | True
 | False
 [@@deriving show]
-
-
       
 let rec sub_reg e r = function
   | EqReg (r', e') when r = r' -> EqExpr (e,e')
@@ -68,7 +65,7 @@ let rec sub_expr n e = function
   | f -> f
       
 let rec eval_formula = function
-    EqExpr (e,e') -> eval_expr empty_env e = eval_expr empty_env e'
+    EqExpr (e,e') -> AST.eval_expr empty_env e = AST.eval_expr empty_env e'
   | Not f -> not (eval_formula f)
   | And (f,f') -> (eval_formula f) && (eval_formula f')
   | Or (f,f') -> (eval_formula f) || (eval_formula f')
@@ -121,7 +118,7 @@ let rec eval_entails _f1 _f2 =
     | False -> True
     | EqVar  (l,e) -> sub_loc  e l f2
     | EqReg  (r,e) -> sub_reg  e r f2
-    | EqExpr (e,n) -> sub_expr n e f2            
+    | EqExpr (e,n) -> sub_expr n e f2
     | Not _ -> f2 (* TODO: this just drops negated formulae! *)
     | Or _ -> raise (Invalid_argument "argument has Or")
     | Symbol _ -> raise (Invalid_argument "argument has Symbol")
@@ -132,39 +129,69 @@ let rec eval_entails _f1 _f2 =
   in
   eval_dnf (convert_dnf _f1)
 
-let mode_order = function
-    (m,n) when m=n -> true  
-  | (Amode Weak,    _)
+let mode_order m n = 
+  match (m, n) with
+    (m,n) when m=n -> true
+  | (Amode Weak, _)
   | (Amode Relaxed, Amode RA)
   | (Amode Relaxed, Amode SC)
   | (Amode Relaxed, Fmode _)
-  | (Amode RA,      Amode SC)
-  | (Amode RA,      Fmode _)
-  | (_,             Fmode FSC) -> true
+  | (Amode RA, Amode SC)
+  | (Amode RA, Fmode _)
+  | (_, Fmode FSC) -> true
   | _ -> false
 
-let mode_lub (m,n) =
-  match (mode_order (m,n), mode_order (n,m)) with
+let mode_lub m n =
+  match (mode_order m n, mode_order n m) with
     (true, false) -> n
   | (false,true)
   | (true, true)  -> m
   | (false,false) -> Fmode FSC
 
-(*                       
-let coalesce : (action * action) -> action list = function
-    (Read  m s l v, Read  m' s' l' v') when s=s' && l=l' && v=v' -> [Read  (mode_lub (m,m')) s l v]
-  | (Write m s l v, Write m' s' l' v') when s=s' && l=l'         -> [Write (mode_lub (m,m')) s l v']
-  | (Fence m s, Fence m' s')           when s=s'                 -> [Fence (mode_lub (m,m')) s]
-  | _                                -> []                                       
+let access_mode_of_mode = function
+  Amode m -> m
+| _ -> raise (Invalid_argument "cannot get access mode of non access operations")
 
+let fence_mode_of_mode = function
+  Fmode m -> m
+| _ -> raise (Invalid_argument "cannot get fence mode of non fence operations")
 
-let bowtie_co = function
-    (Read  _ _ _ _, Read  _ _ _  _) -> true
-  | (Write _ _ l _, Read  _ _ l' _)
-  | (Read  _ _ l _, Write _ _ l' _)
-  | (Write _ _ l _, Write _ _ l' _) -> l<>l'
+(* 
+  Notes:
+    why is the type of this 
+      action -> action -> action list 
+    and not
+      action -> action -> action option
+
+    consider defining same_location same_scope and same_value as predicates. Use these anywhere we're doing this guard syntax of "when s=s' && l=l'"
+*)
+let coalesce a b = 
+  match (a, b) with
+    (Read  (m, s, l, v), Read  (m', s', l', v')) when s=s' && l=l' && v=v' -> 
+    let new_mode = access_mode_of_mode @@ mode_lub (Amode m) (Amode m') in
+    [Read (new_mode, s, l, v)]
+  | (Write (m, s, l, _v), Write (m', s', l', v')) when s=s' && l=l' ->
+      let new_mode = access_mode_of_mode @@ mode_lub (Amode m) (Amode m') in
+      [Write (new_mode, s, l, v')]
+  | (Fence (m, s), Fence (m', s')) when s=s' -> 
+      let new_mode = fence_mode_of_mode @@ mode_lub (Fmode m) (Fmode m') in
+      [Fence (new_mode, s)]
+  | _ -> []
+
+let action_location = function
+  Write (_, _, l, _)
+| Read (_, _, l, _) -> l
+| _ -> raise (Invalid_argument "cannot get location of non load/store actions")
+
+let bowtie_co a1 a2 = 
+  match (a1, a2) with
+  | Read _, Read _ -> true
+  | Read _, Write _
+  | Write _, Read _ 
+  | Write _, Write _ -> action_location a1 <> action_location a2
   | _ -> false
 
+(*
 let bowtie_sync = function
   | (Write m _ _ _, Read  n _ _ _) -> m<>SC || n<>sc
   | (Write _ _ _ _, Write n _ _ _) -> n=Relaxed

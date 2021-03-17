@@ -26,4 +26,3 @@ let rec concat_nonempty f = function
   [l] -> l
 | a :: ls -> f a (concat_nonempty f ls)
 | [] -> raise (Invalid_argument "invariant broken")
-
