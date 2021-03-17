@@ -32,7 +32,22 @@ type formula =
 | True
 | False
 [@@deriving show]
-      
+
+
+type transformer = formula -> formula
+
+type pomsetPT = {
+    evs:  event set;
+    dep:  (event, event) relation;
+    hb:   (event, event) relation;
+    co:   (event, event) relation;
+    lab:  (event, action) environment;
+    pre:  (event, formula) environment;
+    pt:   event set -> formula -> formula;
+    term: formula
+  }
+                 
+
 let rec sub_reg e r = function
   | EqReg (r', e') when r = r' -> EqExpr (e,e')
   | Not f -> Not (sub_reg e r f)
@@ -54,21 +69,12 @@ let rec sub_sym phi s = function
   | Or  (f,f') -> Or  (sub_sym phi s f, sub_sym phi s f')
   | f -> f
 
-let rec sub_expr n e = function
-    EqExpr (e',x) when e' = e -> EqExpr (n,x)
-  | EqExpr (x,e') when e' = e -> EqExpr (x,n)
-  | EqVar  (l,e') when e' = e -> EqVar  (l,n)
-  | EqReg  (r,e') when e' = e -> EqReg  (r,n)
-  | Not f -> Not (sub_expr n e f)
-  | And (f,f') -> And (sub_expr n e f, sub_expr n e f')
-  | Or  (f,f') -> Or  (sub_expr n e f, sub_expr n e f')
-  | f -> f
-      
 let rec eval_formula = function
     EqExpr (e,e') -> AST.eval_expr empty_env e = AST.eval_expr empty_env e'
   | Not f -> not (eval_formula f)
   | And (f,f') -> (eval_formula f) && (eval_formula f')
   | Or (f,f') -> (eval_formula f) || (eval_formula f')
+  | True -> true
   | _ -> false
 
 let rec negate = function
@@ -110,24 +116,25 @@ let rec convert_dnf = function
   | f -> f
 
 (* Strawman for chat with Simon. *)
-let rec eval_entails _f1 _f2 =
+let eval_entails f1 f2 =
   (* TODO: scrub contradictions from dnf? *)
-  let rec substitute f2 = function
-      And (f,f') -> substitute f' (substitute f f2)
-    | True  -> f2
+  let rec substitute f3 = function
+      And (f,f') -> substitute (substitute f3 f) f'
+    | EqVar  (l,e) -> sub_loc  e l f3
+    | EqReg  (r,e) -> sub_reg  e r f3
     | False -> True
-    | EqVar  (l,e) -> sub_loc  e l f2
-    | EqReg  (r,e) -> sub_reg  e r f2
-    | EqExpr (e,n) -> sub_expr n e f2
-    | Not _ -> f2 (* TODO: this just drops negated formulae! *)
+    | True
+    | EqExpr _
+    | Not _ -> f3 (* TODO: this just drops negated formulae! *)
     | Or _ -> raise (Invalid_argument "argument has Or")
     | Symbol _ -> raise (Invalid_argument "argument has Symbol")
   in
   let rec eval_dnf = function
     Or (f,f') -> (eval_dnf f) && (eval_dnf f')
-  | f -> eval_formula (substitute _f2 f)
+    | f -> Format.fprintf Format.std_formatter "%a\n" pp_formula (substitute f2 f);
+           eval_formula (substitute f2 f)
   in
-  eval_dnf (convert_dnf _f1)
+  eval_dnf (convert_dnf f1)
 
 let mode_order m n = 
   match (m, n) with
@@ -168,16 +175,16 @@ let fence_mode_of_mode = function
 let coalesce a b = 
   match (a, b) with
     (Read  (m, s, l, v), Read  (m', s', l', v')) when s=s' && l=l' && v=v' -> 
-    let new_mode = access_mode_of_mode @@ mode_lub (Amode m) (Amode m') in
-    [Read (new_mode, s, l, v)]
+     let new_mode = access_mode_of_mode @@ mode_lub (Amode m) (Amode m') in
+     [Read (new_mode, s, l, v)]
   | (Write (m, s, l, _v), Write (m', s', l', v')) when s=s' && l=l' ->
-      let new_mode = access_mode_of_mode @@ mode_lub (Amode m) (Amode m') in
-      [Write (new_mode, s, l, v')]
+     let new_mode = access_mode_of_mode @@ mode_lub (Amode m) (Amode m') in
+     [Write (new_mode, s, l, v')]
   | (Fence (m, s), Fence (m', s')) when s=s' -> 
-      let new_mode = fence_mode_of_mode @@ mode_lub (Fmode m) (Fmode m') in
-      [Fence (new_mode, s)]
+     let new_mode = fence_mode_of_mode @@ mode_lub (Fmode m) (Fmode m') in
+     [Fence (new_mode, s)]
   | _ -> []
-
+       
 let action_location = function
   Write (_, _, l, _)
 | Read (_, _, l, _) -> l
@@ -205,3 +212,7 @@ let bowtie_sync = function
 
 let bowtie r = bowtie_co r && bowtie_sync r 
                               *)
+(*
+let refines = function
+    ((),())
+ *)
