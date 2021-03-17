@@ -31,8 +31,8 @@ let pp_tex_ast fmt ast =
     Skip -> Format.fprintf fmt "\\done"
   | Assign (r, e) -> Format.fprintf fmt "\\assign[]{%a}{%a}" pp_register r pp_expr e
   (* TODO : Print rmw_strength / exclusivity *)
-  | Load (r, g, a, _) -> Format.fprintf fmt "\\assign[%a]{%s}{%s}" pp_ordering a r (show_global g)
-  | Store (g, e, a, _) -> Format.fprintf fmt "\\assign[%a]{%s}{%a}" pp_ordering a (show_global g) pp_expr e
+  | Load (r, g, a, _) -> Format.fprintf fmt "\\assign[%a]{%s}{%s}" pp_ordering a r g
+  | Store (g, e, a, _) -> Format.fprintf fmt "\\assign[%a]{%s}{%a}" pp_ordering a g pp_expr e
   | Fadd (r, g, rs, o_r, o_w, e) ->
      Format.fprintf fmt "\\assign[]{%a}\\texttt{FADD}(%a, %a, %a, %a, %a)"
                                        pp_register r

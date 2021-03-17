@@ -2,3 +2,5 @@ _build/
 pomsets.byte
 pomsets.native
 test.byte
+
+data/diagrams/

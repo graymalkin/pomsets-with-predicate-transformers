@@ -1,21 +1,24 @@
 TOOL = ../pomsets.native
 OPTIONS = --tex
 TEX_OPTIONS = --interaction=batchmode
-TEMPLATE = ./latex-template/template.tex
+PREAMBLE = ./latex-template/preamble.tex
 
 PROGRAMS = $(wildcard tests/paper-examples/*.lit)
 TEX_SOURCES = $(shell echo $(patsubst %.lit,diagrams/%.tex,$(PROGRAMS)) | tr ' ' '\n' | sort -V)
+DIAGRAMS = $(shell echo $(patsubst %.lit,diagrams/%.pdf,$(PROGRAMS)) | tr ' ' '\n' | sort -V)
 
 .PRECIOUS: $(TOOL)
 
-all: $(TEMPLATE) $(TOOL) $(TEX_SOURCES) 
+all: $(TEMPLATE) tool $(TEX_SOURCES) 
 
-$(TOOL):
+tool:
 	make -C ..
 
-diagrams/%.tex: %.lit $(TOOL)
+diagrams/%.tex: %.lit $(TOOL) $(PREAMBLE)
 	@mkdir -p $(dir $@)
-	$(OCAMLRUNPARAM) $(TOOL) $(OPTIONS) $< > $@
+	@cat $(PREAMBLE) > $@
+	$(OCAMLRUNPARAM) $(TOOL) $(OPTIONS) $< >> $@
+	@cd $(dir $@); lualatex $(TEX_OPTIONS) $(notdir $@)
 
 clean:
-	rm -rf $(TEX_SOURCES)
+	rm -rf diagrams/
