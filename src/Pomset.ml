@@ -23,6 +23,12 @@ let is_read ps e =
     Read _ -> true
   | _ -> false
 
+let same_label e1 e2 =
+  match e1, e2 with
+  Read (l,v), Read (l', v') -> l = l' && v = v'
+| Write (l,v), Write (l', v') -> l = l' && v = v'
+| _ -> false
+
 (** Def 2 - matches *)
 let matches a b =
   match (a, b) with 
@@ -74,7 +80,8 @@ let pomsets_par ps1 ps2 =
   List.map (uncurry pomset_par) (cross ps1 ps2)
 
 let pomset_prefix action pss =
-  List.map (fun ps ->
+  List.fold_right (fun ps acc ->
+    (* Default case *)
     let d = fresh_id () in
     let lab' = bind d action ps.lab in
     let ord' = List.fold_right (fun e acc ->
@@ -82,8 +89,13 @@ let pomset_prefix action pss =
         else (d, e) :: acc
       ) ps.evs []  
     in
-    { evs = ps.evs <|> [d]; lab = lab'; ord = ps.ord <|> ord' }
-  ) pss
+   
+    (* { evs = ps.evs <|> [d]; lab = lab'; ord = ps.ord <|> ord' } :: acc *)
+    (* Mumble case *)
+    if List.exists (fun e -> same_label action (ps.lab e)) ps.evs
+    then ps :: { evs = ps.evs <|> [d]; lab = lab'; ord = ps.ord <|> ord' } :: acc
+    else { evs = ps.evs <|> [d]; lab = lab'; ord = ps.ord <|> ord' } :: acc
+  ) pss []
 
 let rec interp vs = function
   Sequence (Store (g, e, _o, _), ss) ->

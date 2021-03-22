@@ -9,7 +9,7 @@ SOURCE_FILES = src/*.ml src/*.mli \
 %.native: $(SOURCE_FILES)
 	ocamlbuild -use-ocamlfind $@
 
-all: test pomsets.byte pomsets.native
+all: pomsets.byte pomsets.native
 
 test: test.byte
 	./test.byte
