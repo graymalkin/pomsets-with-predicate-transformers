@@ -6,11 +6,34 @@ type register = Reg of string [@@deriving show]
 type thread_id = Tid of int [@@deriving show]
 type mem_ref = Ref of string [@@deriving show]
                     
-type access_mode = Wk | Rlx | RA | SC
-type fence_mode = Acq | Rel | AR
-type scope = Grp | Proc | Sys
-type mode = Amode of access_mode | Fmode of fence_mode
-                        
+type access_mode = Wk | Rlx | RA | SC [@@deriving show]
+type fence_mode = Acq | Rel | AR [@@deriving show]
+type scope = Grp | Proc | Sys [@@deriving show]
+type mode = Amode of access_mode | Fmode of fence_mode [@@deriving show]
+
+type expr = 
+  V of value
+| R of register
+[@@deriving show]
+
+let eval_expr env = function
+  V (Val v) -> v
+| R (Reg r) -> env r
+
+type grammar = 
+  Skip
+| Assign of register * expr
+| Load of register * mem_ref * access_mode * scope
+| Store of mem_ref * access_mode * scope * expr
+| Fence of fence_mode * scope
+| Ite of expr * grammar * grammar
+| Sequence of grammar * grammar
+| LeftPar of grammar * thread_id * grammar
+| CAS of register * access_mode * access_mode * scope * mem_ref * expr * expr
+| FADD of register * access_mode * access_mode * scope * mem_ref * expr
+| EXCHG of register * access_mode * access_mode * scope * mem_ref * expr
+[@@deriving show]
+
 type event = int
 
 type symbol =
@@ -19,10 +42,10 @@ type symbol =
 [@@deriving show]
          
 type formula =
-  Expr of AST.expr
-| EqExpr of AST.expr * AST.expr
-| EqVar  of mem_ref * AST.expr
-| EqReg  of register * AST.expr (* TODO: James does not have this. *)
+  Expr of expr
+| EqExpr of expr * expr
+| EqVar  of mem_ref * expr
+| EqReg  of register * expr (* TODO: James does not have this. *)
 | Symbol of symbol
 | Not of formula
 | And of formula * formula
@@ -53,8 +76,8 @@ let rec sub_sym phi s = function
   | f -> f
 
 let rec eval_formula = function
-  | EqExpr (e,e') -> AST.eval_expr empty_env e = AST.eval_expr empty_env e'
-  | Expr e -> AST.eval_expr empty_env e <> 0
+  | EqExpr (e,e') -> eval_expr empty_env e = eval_expr empty_env e'
+  | Expr e -> eval_expr empty_env e <> 0
   | Not f -> not (eval_formula f)
   | And (f,f') -> (eval_formula f) && (eval_formula f')
   | Or (f,f') -> (eval_formula f) || (eval_formula f')

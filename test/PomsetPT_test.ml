@@ -36,20 +36,20 @@ let test_convert_dnf2 _ =
 
 
 let false_f = False
-let some_f = EqExpr (AST.Number 1, AST.Number 2)
+let some_f = EqExpr (V (Val 1), V (Val 2))
 
 let test_eval_entails_lhs_false _ = assert_equal true (eval_entails false_f some_f)
 
-let x_is_one = EqVar ("x", AST.Number 1)
+let x_is_one = EqVar (Ref "x", V (Val 1))
 
 let test_eval_entails_one_is_one _ = assert_equal true (eval_entails x_is_one x_is_one)
 
-let x_is n = EqVar ("x", AST.Number n)
+let x_is n = EqVar (Ref "x", V (Val n))
 let x_is_one_or_two = Or (x_is 1, x_is 2)
 
 let test_eval_entails_one_or_two_is_one _ = assert_equal false (eval_entails x_is_one_or_two x_is_one)
 
-let y_is n = EqVar ("y", AST.Number n)
+let y_is n = EqVar (Ref "y", V (Val n))
 let x_is_one_and_y_is_one = And (x_is 1, y_is 1)
                           
 let test_eval_entails_xy_one_is_one _ = assert_equal true (eval_entails x_is_one_and_y_is_one x_is_one)
