@@ -1,29 +1,27 @@
 open Relation
 open Util
 
-type value = int
-type register = string [@@deriving show]
-type location = string [@@deriving show]
-
-type scope = CTA | GPU | SYS
-type access_mode = Weak | Relaxed | RA | SC
-type fence_mode = Release | Acquire | FSC
+type value = Val of int [@@deriving show]
+type register = Reg of string [@@deriving show]
+type thread_id = Tid of int [@@deriving show]
+type mem_ref = Ref of string [@@deriving show]
+                    
+type access_mode = Wk | Rlx | RA | SC
+type fence_mode = Acq | Rel | AR
+type scope = Grp | Proc | Sys
 type mode = Amode of access_mode | Fmode of fence_mode
-                                    
+                        
 type event = int
-type action =
-  Write of access_mode * scope * location * value
-| Read of access_mode * scope * location * value
-| Fence of fence_mode * scope
 
 type symbol =
   Write_sym
-| Downgrade of location
+| Downgrade of mem_ref
 [@@deriving show]
          
 type formula =
-  EqExpr of AST.expr * AST.expr
-| EqVar  of location * AST.expr
+  Expr of AST.expr
+| EqExpr of AST.expr * AST.expr
+| EqVar  of mem_ref * AST.expr
 | EqReg  of register * AST.expr (* TODO: James does not have this. *)
 | Symbol of symbol
 | Not of formula
@@ -32,31 +30,6 @@ type formula =
 | True
 | False
 [@@deriving show]
-
-
-type transformer = formula -> formula
-
-(* Definition M1-M9 *)
-type pomsetPT = {
-  evs:  event set;                          (* M1 *)
-  lab:  (event, action) environment;        (* M2 *)
-  pre:  (event, formula) environment;       (* M3 *)
-  pt:   event set -> transformer;    (* M4 *)
-  term: formula;                            (* M5 *)
-  dep:  (event, event) relation;            (* M6 *)
-  hb:   (event, event) relation;            (* M7 *)
-  co:   (event, event) relation;            (* M8 *)
-  rmw:  (event, event) relation;            (* M9 *)
-}
-
-let wf_rmw p =
-  List.iter (fun (d, e) ->
-    assert blocks p d e;
-    assert (List.mem (d, e) p.dep && List.mem (d, e) p.co)
-    (* assert List.for_all (fun c ->
-      overlaps p c d ==> 
-    ) p.evs; *)
-  ) p.rmw
 
 let rec sub_reg e r = function
   | EqReg (r', e') when r = r' -> EqExpr (e,e')
@@ -80,7 +53,8 @@ let rec sub_sym phi s = function
   | f -> f
 
 let rec eval_formula = function
-    EqExpr (e,e') -> AST.eval_expr empty_env e = AST.eval_expr empty_env e'
+  | EqExpr (e,e') -> AST.eval_expr empty_env e = AST.eval_expr empty_env e'
+  | Expr e -> AST.eval_expr empty_env e <> 0
   | Not f -> not (eval_formula f)
   | And (f,f') -> (eval_formula f) && (eval_formula f')
   | Or (f,f') -> (eval_formula f) || (eval_formula f')
@@ -125,17 +99,17 @@ let rec convert_dnf = function
   | Not (Or (f1, f2)) -> convert_dnf (And (Not f1, Not f2))
   | f -> f
 
-(* Strawman for chat with Simon. *)
+(* This is a simple solver that drops quite a bit of information. *)
 let eval_entails f1 f2 =
-  (* TODO: scrub contradictions from dnf? *)
   let rec substitute f3 = function
       And (f,f') -> substitute (substitute f3 f) f'
     | EqVar  (l,e) -> sub_loc  e l f3
     | EqReg  (r,e) -> sub_reg  e r f3
     | False -> True
     | True
+    | Expr _
     | EqExpr _
-    | Not _ -> f3 (* TODO: this just drops negated formulae! *)
+    | Not _ -> f3 
     | Or _ -> raise (Invalid_argument "argument has Or")
     | Symbol _ -> raise (Invalid_argument "argument has Symbol")
   in
@@ -145,25 +119,46 @@ let eval_entails f1 f2 =
   in
   eval_dnf (convert_dnf f1)
 
-let mode_order m n = 
+
+let access_mode_order m n = 
   match (m, n) with
     (m,n) when m=n -> true
-  | (Amode Weak, _)
-  | (Amode Relaxed, Amode RA)
-  | (Amode Relaxed, Amode SC)
-  | (Amode Relaxed, Fmode _)
-  | (Amode RA, Amode SC)
-  | (Amode RA, Fmode _)
-  | (_, Fmode FSC) -> true
+  | (Wk, _)
+  | (_, SC)
+  | (Rlx, RA) -> true
   | _ -> false
 
-let mode_lub m n =
-  match (mode_order m n, mode_order n m) with
-    (true, false) -> n
-  | (false,true)
-  | (true, true)  -> m
-  | (false,false) -> Fmode FSC
+let fence_mode_order m n = 
+  match (m, n) with
+    (m,n) when m=n -> true
+  | (_, AR) -> true
+  | _ -> false
+       
+let mode_order m n = 
+  match (m, n) with
+    (Amode x, Amode y) -> access_mode_order x y
+  | (Fmode x, Fmode y) -> fence_mode_order x y
+  | _ -> false
 
+let lub f m n =
+    match (f m n, f n m) with
+    (true, false) -> Some n
+  | (false,true)
+  | (true, true)  -> Some m
+  | (false,false) -> None
+
+let mode_lub = lub mode_order
+              
+let access_mode_lub m n =
+  match lub access_mode_order m n with
+    Some m -> m
+  | None -> raise (Invalid_argument "panic")
+          
+let fence_mode_lub m n =
+  match lub fence_mode_order m n with
+    Some m -> m
+  | None -> raise (Invalid_argument "panic")
+                   
 let access_mode_of_mode = function
   Amode m -> m
 | _ -> raise (Invalid_argument "cannot get access mode of non access operations")
@@ -172,6 +167,161 @@ let fence_mode_of_mode = function
   Fmode m -> m
 | _ -> raise (Invalid_argument "cannot get fence mode of non fence operations")
 
+type action =
+  Write of thread_id * access_mode * scope * mem_ref * value
+| Read of thread_id * access_mode * scope * mem_ref * value
+| Fence of thread_id * fence_mode * scope
+
+let tid_of = function
+    Read (t, _, _, _, _)
+  | Write (t, _, _, _, _)
+  | Fence (t, _, _) -> t
+
+let mode_of = function
+    Write (_,m,_,_,_)
+  | Read (_,m,_,_,_) -> Amode m
+  | Fence (_,m,_) -> Fmode m
+
+let scope_of = function
+    Read (_, _, s, _, _)
+  | Write (_, _, s, _, _)
+  | Fence (_, _, s) -> s
+
+let mem_ref_of = function
+    Write (_,_,_,x,_)
+  | Read (_,_,_,x,_) -> Some x
+  | Fence _ -> None
+
+let is_access = function Read _ | Write _ -> true | Fence _ -> false
+let is_read   = function Read _ -> true | _ -> false
+
+let matches a b =
+  match (a,b) with
+    Write (_,_,_,x,v), Read (_,_,_,x',v') -> x = x' && v = v' 
+  | _ -> false
+
+let blocks a b =
+  match (a,b) with
+    Write (_,_,_,x,_), Read (_,_,_,x',_) -> x = x'
+  | _ -> false
+
+let overlaps a b =
+  match (mem_ref_of a, mem_ref_of b) with
+    Some x, Some x' -> x = x'
+  | _ -> false
+       
+let coherence_delays a b =
+  match (a, b) with
+    Write (_,m,_,x,_), Write (_,m',_,x',_)
+  | Read  (_,m,_,x,_), Write (_,m',_,x',_)
+  | Write (_,m,_,x,_), Read  (_,m',_,x',_) -> x = x' || (m = SC && m' = SC)
+  | Read  (_,SC,_,_,_), Read (_,SC,_,_,_) -> true
+  | _ -> false
+
+let synchronisation_delays a b =
+  match (a, b) with
+    _, Write (_,m,_,_,_) when access_mode_order RA m -> true
+  | _, Fence (_,m,_) when fence_mode_order Rel m -> true
+  | Read _, Fence (_,m,_) when fence_mode_order Acq m -> true
+  | Read _, Read (_,m,_,_,_) when access_mode_order RA m && mem_ref_of a = mem_ref_of b -> true
+  | Read (_,m,_,_,_), _ when access_mode_order RA m -> true
+  | Fence (_,m,_),_ when fence_mode_order Acq m -> true
+  | Fence (_,m,_), Write _ when fence_mode_order Rel m -> true
+  | Write (_,m,_,_,_), Write _ when access_mode_order RA m && mem_ref_of a = mem_ref_of b -> true
+  | _ -> false
+
+let is_release = function
+    Write (_,m,_,_,_) -> access_mode_order RA m
+  | Fence (_,m,_) -> fence_mode_order Rel m
+  | _ -> false
+
+let merge a b =
+  match (a, b) with
+    Read (tid,m,s,x,v), Read (_,m',_,x',v') when x = x' && v = v' -> [Read (tid,access_mode_lub m m',s,x,v)]
+  | Write (tid,m,s,x,_), Write (_,m',_,x',w) when x = x' -> [Write (tid,access_mode_lub m m',s,x,w)]
+  | Write (tid,m,s,x,v), Read (_,Rlx,_,x',v') when x = x' && v = v' -> [Write (tid,m,s,x,v)]
+  | Fence (tid,m,s), Fence(_,m',_) -> [Fence (tid,fence_mode_lub m m',s)]
+  | _ -> []
+
+
+(** Definition 1.1 *)
+let imm_strongly_blocks _ _ = true (* TODO: investigate last email from James. *)
+
+let imm_strongly_matches a b = overlaps a b && mode_of a <> Amode Rlx && mode_of b <> Amode Rlx
+
+(** Definition 1.2 *)
+let ptx_strongly_blocks eq_proc eq_grp a b =
+  tid_of a = tid_of b
+  || (
+    mode_of a <> Amode Wk && mode_of b <> Amode Wk   (* 2a *)
+    && (scope_of a = Grp || scope_of b = Grp) ==> eq_grp a b (* 2b *)
+    && (scope_of a = Proc || scope_of b = Proc) ==> eq_proc a b (* 2c *)
+    && (is_access a || is_access b) ==> overlaps a b (* 2d *)
+  )
+
+let ptx_strongly_matches = ptx_strongly_blocks
+
+(** Definition 1.3 *)
+type transformer = formula -> formula
+
+(* Definition M1-M9 *)
+type pomsetPT = {
+  evs:  event set;                          (* M1 *)
+  lab:  (event, action) environment;        (* M2 *)
+  pre:  (event, formula) environment;       (* M3 *)
+  pt:   event set -> transformer;    (* M4 *) (* TODO: definition 1.4 restricts these in a way that we cannot implement because it universally quantifies formulae. *)
+  term: formula;                            (* M5 *)
+  dep:  (event, event) relation;            (* M6 *)
+  hb:   (event, event) relation;            (* M7 *)
+  psc:   (event, event) relation;           (* M8 *)
+  rmw:  (event, event) relation;            (* M9 *)
+}
+
+(* M8a *)
+let wf_psc p =
+  List.iter (fun (d, e) ->
+      if overlaps (p.lab d) (p.lab e)
+      then assert (List.mem (d,e) p.psc)
+    ) p.hb
+  
+let wf_rmw p =
+  List.iter (fun (d, e) ->
+      assert (blocks (p.lab d) (p.lab e)); (* M9a *)
+      assert (List.mem (d, e) p.dep && List.mem (d, e) p.psc); (* M9b *)
+      List.iter (fun c ->
+          if overlaps (p.lab c) (p.lab d)
+          then (
+            (* M9c i *)
+            assert (List.mem (c, e) p.dep ==> List.mem (c, d) p.dep);
+            assert (List.mem (c, e) p.hb  ==> List.mem (c, d) p.hb);
+            assert (List.mem (c, e) p.psc ==> List.mem (c, d) p.psc);
+
+            (* M9c ii *)
+            assert (List.mem (d, c) p.dep ==> List.mem (e, c) p.dep);
+            assert (List.mem (d, c) p.hb  ==> List.mem (e, c) p.hb);
+            assert (List.mem (d, c) p.psc ==> List.mem (e, c) p.psc)
+          )
+        ) p.evs
+    ) p.rmw
+
+let candidate strongly_matches p rf =
+  List.for_all (fun (d, e) ->
+      matches (p.lab d) (p.lab e) (* c1 *)
+    (*  && List.iter (fun c -> blocks (p.lab c) (p.lab e) ==> true) p.evs *)(* c2, TODO: but it looks wrong so we didn't implement it. *)
+      && List.mem (d, e) p.dep && List.mem (d, e) p.psc (* c3*)
+      && strongly_matches (p.lab d) (p.lab e) ==> List.mem (d, e) p.hb (* C4 *)
+    )
+    rf
+
+let top_level p rf =
+  List.for_all (fun e ->
+      eval_formula (p.pre e) (* T1 *)
+      && (is_read (p.lab e) ==> List.exists (fun d -> List.mem (d, e) rf) p.evs) (* T2 *)
+    ) p.evs
+  
+let refines p1 p2 = subset p1 p2
+
+  
 (* 
   Notes:
     why is the type of this 
@@ -179,7 +329,7 @@ let fence_mode_of_mode = function
     and not
       action -> action -> action option
 
-    consider defining same_location same_scope and same_value as predicates. Use these anywhere we're doing this guard syntax of "when s=s' && l=l'"
+    consider defining same_mem_ref same_scope and same_value as predicates. Use these anywhere we're doing this guard syntax of "when s=s' && l=l'"
 *)
 let coalesce a b = 
   match (a, b) with
@@ -194,29 +344,29 @@ let coalesce a b =
      [Fence (new_mode, s)]
   | _ -> []
        
-let action_location = function
+let action_mem_ref = function
   Write (_, _, l, _)
 | Read (_, _, l, _) -> l
-| _ -> raise (Invalid_argument "cannot get location of non load/store actions")
+| _ -> raise (Invalid_argument "cannot get mem_ref of non load/store actions")
 
 let bowtie_co a1 a2 = 
   match (a1, a2) with
   | Read _, Read _ -> true
   | Read _, Write _
   | Write _, Read _ 
-  | Write _, Write _ -> action_location a1 <> action_location a2
+  | Write _, Write _ -> action_mem_ref a1 <> action_mem_ref a2
   | _ -> false
 
 (*
 let bowtie_sync = function
   | (Write m _ _ _, Read  n _ _ _) -> m<>SC || n<>sc
-  | (Write _ _ _ _, Write n _ _ _) -> n=Relaxed
-  | (Read  m _ _ _, Write n _ _ _) -> m=Relaxed && n=Relaxed
-  | (Read  m _ _ _, Read  _ _ _ _) -> m=Relaxed
+  | (Write _ _ _ _, Write n _ _ _) -> n=Rlx
+  | (Read  m _ _ _, Write n _ _ _) -> m=Rlx && n=Rlx
+  | (Read  m _ _ _, Read  _ _ _ _) -> m=Rlx
   | (Fence m _    , Fence n _    ) -> m=Release && n=Acquire
   | (Fence m _    , Read  _ _ _ _) -> m=Release
   | (Write _ _ _ _, Fence n _    ) -> n=Acquire
-  | (Read  m _ _ _, Fence n _    ) -> m=Relaxed && n=Acquire (* TODO: Fence X not implemented. *)
+  | (Read  m _ _ _, Fence n _    ) -> m=Rlx && n=Acquire (* TODO: Fence X not implemented. *)
   | _ -> false
 
 let bowtie r = bowtie_co r && bowtie_sync r 
