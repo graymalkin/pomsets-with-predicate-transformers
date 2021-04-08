@@ -36,17 +36,27 @@ type formula =
 
 type transformer = formula -> formula
 
+(* Definition M1-M9 *)
 type pomsetPT = {
-    evs:  event set;
-    dep:  (event, event) relation;
-    hb:   (event, event) relation;
-    co:   (event, event) relation;
-    lab:  (event, action) environment;
-    pre:  (event, formula) environment;
-    pt:   event set -> formula -> formula;
-    term: formula
-  }
-                 
+  evs:  event set;                          (* M1 *)
+  lab:  (event, action) environment;        (* M2 *)
+  pre:  (event, formula) environment;       (* M3 *)
+  pt:   event set -> transformer;    (* M4 *)
+  term: formula;                            (* M5 *)
+  dep:  (event, event) relation;            (* M6 *)
+  hb:   (event, event) relation;            (* M7 *)
+  co:   (event, event) relation;            (* M8 *)
+  rmw:  (event, event) relation;            (* M9 *)
+}
+
+let wf_rmw p =
+  List.iter (fun (d, e) ->
+    assert blocks p d e;
+    assert (List.mem (d, e) p.dep && List.mem (d, e) p.co)
+    (* assert List.for_all (fun c ->
+      overlaps p c d ==> 
+    ) p.evs; *)
+  ) p.rmw
 
 let rec sub_reg e r = function
   | EqReg (r', e') when r = r' -> EqExpr (e,e')
