@@ -4,3 +4,4 @@ pomsets.native
 test.byte
 
 data/diagrams/
+src/*.merlin

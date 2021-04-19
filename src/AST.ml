@@ -3,7 +3,7 @@ let pp_register fmt = Format.fprintf fmt "%s"
 type global = string [@@deriving show, eq]
 let pp_global fmt = Format.fprintf fmt "%s"
 type value = int [@@deriving show, eq]
-type comment = string [@@deriving show]
+type comment = string
 
 module Satisfaction_map =
   Map.Make (
@@ -19,7 +19,8 @@ type ordering =
   | Acquire
   | Release
   | SC
-[@@deriving eq, show]
+[@@deriving eq]
+
 let show_ordering = function
     NonAtomic -> "na"
   | Relaxed -> "rlx"

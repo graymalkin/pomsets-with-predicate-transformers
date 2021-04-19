@@ -26,3 +26,10 @@ let rec concat_nonempty f = function
   [l] -> l
 | a :: ls -> f a (concat_nonempty f ls)
 | [] -> raise (Invalid_argument "invariant broken")
+
+let log level msg =
+  Format.fprintf Format.err_formatter "[%-5s] %s" level msg
+
+let warn =  log "WARN"
+let debug = log "DEBUG"
+let error = log "ERROR"

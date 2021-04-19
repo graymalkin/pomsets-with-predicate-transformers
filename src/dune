@@ -1,0 +1,16 @@
+(include_subdirs unqualified)
+
+(executables
+  (names pomsets test)
+  (preprocess (pps ppx_deriving.show ppx_deriving.eq))
+  (libraries 
+    batteries
+    ocamlgraph
+    ounit2
+    )
+  )
+
+(rule
+  (alias runtest)
+  (action (run ./test.exe)))
+  

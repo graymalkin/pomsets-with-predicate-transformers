@@ -1,4 +1,0 @@
-S src/** test/**
-B _build/**
-PKG batteries ocamlgraph fmt ounit2
-FLG -w A -w -42 -w -4 -w -32

@@ -17,15 +17,15 @@ type expr =
 [@@deriving show]
 
 let eval_expr env = function
-  V (Val v) -> v
-| R (Reg r) -> env r
+    V (Val v) -> v
+  | R (Reg r) -> env r
 
 type grammar = 
   Skip
 | Assign of register * expr
 | Load of register * mem_ref * access_mode * scope
 | Store of mem_ref * access_mode * scope * expr
-| Fence of fence_mode * scope
+| FenceStmt of fence_mode * scope
 | Ite of expr * grammar * grammar
 | Sequence of grammar * grammar
 | LeftPar of grammar * thread_id * grammar
@@ -92,12 +92,12 @@ let rec negate = function
 
 let extract_conjunt_clauses = function
     And (f1, f2) -> [f1;f2]
-  | Or _ -> raise (Invalid_argument "argument not in DNF")
+  | Or _ -> raise (Invalid_argument "argument not in DNF (X4jLx0)")
   | f -> [f]
 
 let extract_disjunt_clauses = function
     Or (f1, f2) -> [f1;f2]
-  | And _ -> raise (Invalid_argument "argument not in DNF")
+  | And _ -> raise (Invalid_argument "argument not in DNF (Od97c0)")
   | f -> [f]
 
 let rec convert_cnf = function
@@ -133,8 +133,8 @@ let eval_entails f1 f2 =
     | Expr _
     | EqExpr _
     | Not _ -> f3 
-    | Or _ -> raise (Invalid_argument "argument has Or")
-    | Symbol _ -> raise (Invalid_argument "argument has Symbol")
+    | Or _ -> raise (Invalid_argument "argument has Or (DjytOl)")
+    | Symbol _ -> raise (Invalid_argument "argument has Symbol (8z6kkd)")
   in
   let rec eval_dnf = function
     Or (f,f') -> (eval_dnf f) && (eval_dnf f')
@@ -175,11 +175,11 @@ let fence_mode_lub m n = Option.get @@ lub fence_mode_order m n
 
 let access_mode_of_mode = function
   Amode m -> m
-| _ -> raise (Invalid_argument "cannot get access mode of non access operations")
+| _ -> raise (Invalid_argument "cannot get access mode of non access operations (AwlomK)")
 
 let fence_mode_of_mode = function
   Fmode m -> m
-| _ -> raise (Invalid_argument "cannot get fence mode of non fence operations")
+| _ -> raise (Invalid_argument "cannot get fence mode of non fence operations (5OFcpC)")
 
 type action =
   Write of thread_id * access_mode * scope * mem_ref * value
@@ -322,6 +322,8 @@ let wf_rmw p =
     ) p.evs
   ) p.rmw
 
+let wf_pomset p = wf_psc p; wf_rmw p
+
 let candidate strongly_blocks strongly_matches p rf =
   let weak_psc d' e' =
       (not (List.mem (d', e') p.psc) || d' = e') 
@@ -344,7 +346,23 @@ let top_level p rf =
 
 let refines p1 p2 = subset p1 p2
 
-  
+let empty_pomset = { 
+  evs = [];
+  lab = empty_env;
+  pre = empty_env;
+  pt = empty_env; (* ?? *)
+  term = True; (* ?? *)
+  dep = [];
+  hb = [];
+  psc = [];
+  rmw = []
+}
+
+(** Semantics *)
+let interp _vs = function
+  Skip -> empty_pomset
+| _ -> raise (Invalid_argument "not yet implemented (8aunvy)")
+
 (* 
   Notes:
     why is the type of this 

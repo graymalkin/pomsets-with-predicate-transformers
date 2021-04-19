@@ -1,13 +1,13 @@
 type 'a set = 'a list
-[@@deriving show, eq, to_yojson]
+[@@deriving show, eq]
 
 type ('a, 'b) env = ('a -> 'b)
 
 type ('a, 'b) edge = ('a * 'b)
-[@@deriving show,eq, to_yojson]
+[@@deriving show,eq]
 
 type ('a, 'b) relation = (('a, 'b) edge) set
-[@@deriving show, eq, to_yojson]
+[@@deriving show, eq]
 
 let union a b =
   let ns = List.filter (fun x -> not(List.mem x a)) b in
