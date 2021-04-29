@@ -1,20 +1,18 @@
 open Relation
 open Util
 
+(** Preliminaries *)
 type value = Val of int [@@deriving show]
 type register = Reg of string [@@deriving show]
-type thread_id = Tid of int [@@deriving show]
-type mem_ref = Ref of string [@@deriving show]
-
-type access_mode = Wk | Rlx | RA | SC [@@deriving show]
-type fence_mode = Acq | Rel | AR [@@deriving show]
-type scope = Grp | Proc | Sys [@@deriving show]
-type mode = Amode of access_mode | Fmode of fence_mode [@@deriving show]
-
 type expr = 
   V of value
 | R of register
 [@@deriving show]
+type thread_id = Tid of int [@@deriving show]
+type mem_ref = Ref of string [@@deriving show]
+
+type mode = Wk | Rlx | Acq | Rel | RA | SC [@@deriving show]
+type scope = Grp | Proc | Sys [@@deriving show]
 
 let eval_expr env = function
     V (Val v) -> v
@@ -23,15 +21,15 @@ let eval_expr env = function
 type grammar = 
   Skip
 | Assign of register * expr
-| Load of register * mem_ref * access_mode * scope
-| Store of mem_ref * access_mode * scope * expr
-| FenceStmt of fence_mode * scope
+| Load of register * mem_ref * mode * scope
+| Store of mem_ref * mode * scope * expr
+| FenceStmt of mode * scope
 | Ite of expr * grammar * grammar
 | Sequence of grammar * grammar
 | LeftPar of grammar * thread_id * grammar
-| CAS of register * access_mode * access_mode * scope * mem_ref * expr * expr
-| FADD of register * access_mode * access_mode * scope * mem_ref * expr
-| EXCHG of register * access_mode * access_mode * scope * mem_ref * expr
+| CAS of register * mode * mode * scope * mem_ref * expr * expr
+| FADD of register * mode * mode * scope * mem_ref * expr
+| EXCHG of register * mode * mode * scope * mem_ref * expr
 [@@deriving show]
 
 type event = int
@@ -142,24 +140,12 @@ let eval_entails f1 f2 =
   in
   eval_dnf (convert_dnf f1)
 
-let access_mode_order m n = 
-  match (m, n) with
-    (m,n) when m=n -> true
-  | (Wk, _)
-  | (_, SC)
-  | (Rlx, RA) -> true
-  | _ -> false
-
-let fence_mode_order m n = 
-  match (m, n) with
-    (m,n) when m=n -> true
-  | (_, AR) -> true
-  | _ -> false
-
 let mode_order m n = 
   match (m, n) with
-    (Amode x, Amode y) -> access_mode_order x y
-  | (Fmode x, Fmode y) -> fence_mode_order x y
+    Wk, _
+  | Rlx, Rel | Rlx, Acq | Rlx, RA -> true
+  | Rel, RA | Acq, RA -> true
+  | _, SC -> true
   | _ -> false
 
 let lub f m n =
@@ -169,22 +155,12 @@ let lub f m n =
   | (true, true)  -> Some m
   | (false,false) -> None
 
-let mode_lub = lub mode_order
-let access_mode_lub m n = Option.get @@ lub access_mode_order m n
-let fence_mode_lub m n = Option.get @@ lub fence_mode_order m n
-
-let access_mode_of_mode = function
-  Amode m -> m
-| _ -> raise (Invalid_argument "cannot get access mode of non access operations (AwlomK)")
-
-let fence_mode_of_mode = function
-  Fmode m -> m
-| _ -> raise (Invalid_argument "cannot get fence mode of non fence operations (5OFcpC)")
+let mode_lub a b = Option.get @@ lub mode_order a b
 
 type action =
-  Write of thread_id * access_mode * scope * mem_ref * value
-| Read of thread_id * access_mode * scope * mem_ref * value
-| Fence of thread_id * fence_mode * scope
+  Write of thread_id * mode * scope * mem_ref * value
+| Read of thread_id * mode * scope * mem_ref * value
+| Fence of thread_id * mode * scope
 
 let tid_of = function
     Read (t, _, _, _, _)
@@ -193,8 +169,8 @@ let tid_of = function
 
 let mode_of = function
     Write (_,m,_,_,_)
-  | Read (_,m,_,_,_) -> Amode m
-  | Fence (_,m,_) -> Fmode m
+  | Read (_,m,_,_,_)
+  | Fence (_,m,_) -> m
 
 let scope_of = function
     Read (_, _, s, _, _)
@@ -223,57 +199,75 @@ let overlaps a b =
   match (mem_ref_of a, mem_ref_of b) with
     Some x, Some x' -> x = x'
   | _ -> false
-       
+
 let coherence_delays a b =
   match (a, b) with
     Write _, Write _
   | Read  _, Write _
   | Write _, Read  _ -> 
-      mem_ref_of a = mem_ref_of b || (mode_of a = Amode SC && mode_of b = Amode SC)
-  | Read  (_,SC,_,_,_), Read (_,SC,_,_,_) -> true
+      mem_ref_of a = mem_ref_of b || (mode_of a = SC && mode_of b = SC)
+  | Read  _, Read _ -> mode_of a = SC && mode_of b = SC
   | _ -> false
 
 let synchronisation_delays a b =
   match (a, b) with
-    _, Write (_,m,_,_,_) when access_mode_order RA m -> true
-  | _, Fence (_,m,_) when fence_mode_order Rel m -> true
-  | Read _, Fence (_,m,_) when fence_mode_order Acq m -> true
-  | Read _, Read (_,m,_,_,_) when access_mode_order RA m && mem_ref_of a = mem_ref_of b -> true
-  | Read (_,m,_,_,_), _ when access_mode_order RA m -> true
-  | Fence (_,m,_),_ when fence_mode_order Acq m -> true
-  | Fence (_,m,_), Write _ when fence_mode_order Rel m -> true
-  | Write (_,m,_,_,_), Write _ when access_mode_order RA m && mem_ref_of a = mem_ref_of b -> true
+    _, Write (_,m,_,_,_) when mode_order Rel m -> true
+  | _, Fence (_,m,_) when mode_order Rel m -> true
+  | Read _, Fence (_,m,_) when mode_order Acq m -> true
+  | Read (_,m,_,_,_), _ when mode_order Acq m -> true
+  | Fence (_,m,_),_ when mode_order Acq m -> true
+  | Fence (_,m,_), Write _ when mode_order Rel m -> true
+  | Write (_,m,_,_,_), Write _ when mode_order Rel m && mem_ref_of a = mem_ref_of b -> true
   | _ -> false
 
 let is_release = function
-    Write (_,m,_,_,_) -> access_mode_order RA m
-  | Fence (_,m,_) -> fence_mode_order Rel m
+    Write (_,m,_,_,_) -> mode_order Rel m
+  | Fence (_,m,_) -> mode_order Rel m
+  | _ -> false
+
+let is_acquire = function
+    Write (_,m,_,_,_) -> mode_order Acq m
+  | Fence (_,m,_) -> mode_order Acq m
   | _ -> false
 
 let merge a b =
   match (a, b) with
-    Read (tid,m,s,x,v), Read (_,m',_,x',v') when x = x' && v = v' -> [Read (tid,access_mode_lub m m',s,x,v)]
-  | Write (tid,m,s,x,_), Write (_,m',_,x',w) when x = x' -> [Write (tid,access_mode_lub m m',s,x,w)]
-  | Write (tid,m,s,x,v), Read (_,Rlx,_,x',v') when x = x' && v = v' -> [Write (tid,m,s,x,v)]
-  | Fence (tid,m,s), Fence(_,m',_) -> [Fence (tid,fence_mode_lub m m',s)]
+    Read (tid,m,s,x,v), Read (_,m',_,x',v') when x = x' && v = v' ->
+    [Read (tid,mode_lub m m',s,x,v)]
+  | Write (tid,m,s,x,_), Write (_,m',_,x',w) when x = x' ->
+    [Write (tid,mode_lub m m',s,x,w)]
+  | Write (tid,m,s,x,v), Read (_,m',_,x',v') when x = x' && v = v' && mode_order Rlx m' ->
+    [Write (tid,mode_lub m m',s,x,v)]
+  | Fence (tid,m,s), Fence(_,m',_) -> [Fence (tid,mode_lub m m',s)]
   | _ -> []
 
 (** Definition 1.1 *)
-let imm_strongly_blocks _ _ = true (* TODO: investigate last email from James. *)
-
-let imm_strongly_matches a b = overlaps a b && mode_of a <> Amode Rlx && mode_of b <> Amode Rlx
-
-(** Definition 1.2 *)
-let ptx_strongly_blocks eq_proc eq_grp a b =
-  tid_of a = tid_of b
-  || (
-    mode_of a <> Amode Wk && mode_of b <> Amode Wk   (* 2a *)
-    && (scope_of a = Grp || scope_of b = Grp) ==> eq_grp a b (* 2b *)
-    && (scope_of a = Proc || scope_of b = Proc) ==> eq_proc a b (* 2c *)
-    && (is_access a || is_access b) ==> overlaps a b (* 2d *)
+let strongly_overlaps eq_grp eq_proc a b =
+  is_access a && is_access b && (
+    tid_of a = tid_of b
+    || (
+      mode_of a <> Wk && mode_of b <> Wk   (* 2a *)
+      && (scope_of a = Grp || scope_of b = Grp) ==> eq_grp a b (* 2b *)
+      && (scope_of a = Proc || scope_of b = Proc) ==> eq_proc a b (* 2c *)
+    )
   )
 
-let ptx_strongly_matches = ptx_strongly_blocks
+let strongly_fences eq_grp eq_proc a b =
+  match a, b with
+    Fence _, Fence _ ->
+    tid_of a = tid_of b
+    || (
+      mode_of a <> Wk && mode_of b <> Wk   (* 2a *)
+      && (scope_of a = Grp || scope_of b = Grp) ==> eq_grp a b (* 2b *)
+      && (scope_of a = Proc || scope_of b = Proc) ==> eq_proc a b (* 2c *)
+    )
+  | _ -> false
+
+let strongly_matches eq_grp eq_proc a b =
+  is_release a && is_acquire b && (
+       strongly_overlaps eq_grp eq_proc a b 
+    || strongly_fences eq_grp eq_proc a b
+  )
 
 (** Definition 1.3 *)
 type transformer = formula -> formula

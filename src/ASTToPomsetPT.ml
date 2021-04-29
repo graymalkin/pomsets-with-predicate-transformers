@@ -1,7 +1,7 @@
 open AST
 open PomsetPT
 
-open Util
+(* open Util *)
 
 let convert_expr = function
   Number n -> V (Val n)
@@ -23,11 +23,10 @@ let convert_access_ordering = function
 let convert_fence_ordering = function
   AST.Release -> PomsetPT.Rel
 | AST.Acquire -> PomsetPT.Acq
-| AST.SC ->
-  warn "SC fence converted to AR fence for use in PomsetPT\n";
-  PomsetPT.AR
+| AST.SC -> PomsetPT.SC
 | _ -> raise (Invalid_argument "fence mode not supported by PomsetPT (iZ7QX7)")
 
+(** TODO: Restrict valid ordering annotations for loads/stores/fences to match James' definitions *)
 let rec convert_program = function
   AST.Skip -> PomsetPT.Skip
 | AST.Assign (r, e) -> PomsetPT.Assign (Reg r, convert_expr e)
