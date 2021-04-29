@@ -5,7 +5,7 @@ type value = Val of int [@@deriving show]
 type register = Reg of string [@@deriving show]
 type thread_id = Tid of int [@@deriving show]
 type mem_ref = Ref of string [@@deriving show]
-                    
+
 type access_mode = Wk | Rlx | RA | SC [@@deriving show]
 type fence_mode = Acq | Rel | AR [@@deriving show]
 type scope = Grp | Proc | Sys [@@deriving show]
@@ -362,48 +362,3 @@ let empty_pomset = {
 let interp _vs = function
   Skip -> empty_pomset
 | _ -> raise (Invalid_argument "not yet implemented (8aunvy)")
-
-(* 
-  Notes:
-    why is the type of this 
-      action -> action -> action list 
-    and not
-      action -> action -> action option
-
-    consider defining same_mem_ref same_scope and same_value as predicates. Use these anywhere we're doing this guard syntax of "when s=s' && l=l'"
-*)
-(* let coalesce a b = 
-  match (a, b) with
-    (Read  (m, s, l, v), Read  (m', s', l', v')) when s=s' && l=l' && v=v' -> 
-     let new_mode = access_mode_of_mode @@ mode_lub (Amode m) (Amode m') in
-     [Read (new_mode, s, l, v)]
-  | (Write (m, s, l, _v), Write (m', s', l', v')) when s=s' && l=l' ->
-     let new_mode = access_mode_of_mode @@ mode_lub (Amode m) (Amode m') in
-     [Write (new_mode, s, l, v')]
-  | (Fence (m, s), Fence (m', s')) when s=s' -> 
-     let new_mode = fence_mode_of_mode @@ mode_lub (Fmode m) (Fmode m') in
-     [Fence (new_mode, s)]
-  | _ -> []
-
-let bowtie_co a1 a2 = 
-  match (a1, a2) with
-  | Read _, Read _ -> true
-  | Read _, Write _
-  | Write _, Read _ 
-  | Write _, Write _ -> action_mem_ref a1 <> action_mem_ref a2
-  | _ -> false *)
-
-(*
-let bowtie_sync = function
-  | (Write m _ _ _, Read  n _ _ _) -> m<>SC || n<>sc
-  | (Write _ _ _ _, Write n _ _ _) -> n=Rlx
-  | (Read  m _ _ _, Write n _ _ _) -> m=Rlx && n=Rlx
-  | (Read  m _ _ _, Read  _ _ _ _) -> m=Rlx
-  | (Fence m _    , Fence n _    ) -> m=Release && n=Acquire
-  | (Fence m _    , Read  _ _ _ _) -> m=Release
-  | (Write _ _ _ _, Fence n _    ) -> n=Acquire
-  | (Read  m _ _ _, Fence n _    ) -> m=Rlx && n=Acquire (* TODO: Fence X not implemented. *)
-  | _ -> false
-
-let bowtie r = bowtie_co r && bowtie_sync r 
-                              *)
