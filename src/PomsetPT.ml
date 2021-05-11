@@ -184,6 +184,7 @@ let mem_ref_of = function
 
 let is_access = function Read _ | Write _ -> true | Fence _ -> false
 let is_read   = function Read _ -> true | _ -> false
+let is_write  = function Write _ -> true | _ -> false
 
 let matches a b =
   match (a,b) with
@@ -269,90 +270,184 @@ let strongly_matches eq_grp eq_proc a b =
     || strongly_fences eq_grp eq_proc a b
   )
 
-(** Definition 1.3 *)
+(** Definition 1.2 *)
 type transformer = formula -> formula
+
+(** Definition 1.3 *)
+type transformer_family = event set -> transformer
+
+(* This is a point at which the tool is incomplete. Quantifying all possible 
+   formulae f is uncomputable. *)
+let wf_transformer_family p_univ e f tf =
+  p_univ |> List.for_all (fun d ->
+    p_univ |> List.for_all (fun c ->
+      subset (=) (c <&> e) d ==> eval_entails (tf c f) (tf d f)
+    )
+  )
 
 (* Definition M1-M9 *)
 type pomsetPT = {
-  evs:  event set;                          (* M1 *)
-  lab:  (event, action) environment;        (* M2 *)
-  pre:  (event, formula) environment;       (* M3 *)
+  evs: event set;                           (* M1 *)
+  lab: (event, action) environment;         (* M2 *)
+  pre: (event, formula) environment;        (* M3 *)
   
   (* TODO: definition 1.4 restricts these in a way that we cannot 
            implement because it universally quantifies formulae. *)
-  pt:   event set -> transformer;           (* M4 *)
+  pt:   transformer_family;                 (* M4 *)
   
   term: formula;                            (* M5 *)
   dep:  (event, event) relation;            (* M6 *)
-  hb:   (event, event) relation;            (* M7 *)
-  psc:   (event, event) relation;           (* M8 *)
-  rmw:  (event, event) relation;            (* M9 *)
+  sync: (event, event) relation;            (* M7 *)
+  plo:  (event, event) relation;            (* M8 *)
+  rmw:  (event, event) relation             (* M9 *)
 }
 
 (* M8a *)
-let wf_psc p =
+let wf_plo p =
   List.iter (fun (d, e) ->
     if overlaps (p.lab d) (p.lab e)
-    then assert (List.mem (d,e) p.psc)
-  ) p.hb
+    then assert (List.mem (d,e) p.plo)
+  ) p.sync
   
 let wf_rmw p =
   List.iter (fun (d, e) ->
-    assert (blocks (p.lab d) (p.lab e)); (* M9a *)
-    assert (List.mem (d, e) p.dep && List.mem (d, e) p.psc); (* M9b *)
+    assert (blocks (p.lab e) (p.lab d)); (* M9a *)
+    assert (List.mem (d, e) p.sync && List.mem (d, e) p.plo); (* M9b *)
     List.iter (fun c ->
       if overlaps (p.lab c) (p.lab d)
       then (
         (* M9c i *)
-        assert (List.mem (c, e) p.dep ==> List.mem (c, d) p.dep);
-        assert (List.mem (c, e) p.hb  ==> List.mem (c, d) p.hb);
-        assert (List.mem (c, e) p.psc ==> List.mem (c, d) p.psc);
+        assert (List.mem (c, e) p.dep  ==> List.mem (c, d) p.dep);
+        assert (List.mem (c, e) p.sync ==> List.mem (c, d) p.sync);
+        assert (List.mem (c, e) p.plo  ==> List.mem (c, d) p.plo);
 
         (* M9c ii *)
-        assert (List.mem (d, c) p.dep ==> List.mem (e, c) p.dep);
-        assert (List.mem (d, c) p.hb  ==> List.mem (e, c) p.hb);
-        assert (List.mem (d, c) p.psc ==> List.mem (e, c) p.psc)
+        assert (List.mem (d, c) p.dep  ==> List.mem (e, c) p.dep);
+        assert (List.mem (d, c) p.sync ==> List.mem (e, c) p.sync);
+        assert (List.mem (d, c) p.plo  ==> List.mem (e, c) p.plo)
       )
     ) p.evs
   ) p.rmw
 
-let wf_pomset p = wf_psc p; wf_rmw p
+let wf_pomset p = wf_plo p; wf_rmw p
 
-let candidate strongly_blocks strongly_matches p rf =
-  let weak_psc d' e' =
-      (not (List.mem (d', e') p.psc) || d' = e') 
-    && (strongly_blocks d' e' ==> List.mem (d', e') p.psc)
+let candidate strongly_overlaps strongly_matches strongly_fences p rf =
+  let weak_plo d' e' =
+      ((List.mem (d', e') p.plo) ==> (d' = e'))
+    && (strongly_overlaps d' e' ==> List.mem (d', e') p.plo)
   in
   List.for_all (fun (d, e) ->
     matches (p.lab d) (p.lab e) (* C1 *)
     && List.for_all (fun c -> 
-      blocks (p.lab c) (p.lab e) ==> weak_psc c d || weak_psc e c
+      blocks (p.lab c) (p.lab e) ==> weak_plo c d || weak_plo e c
       ) p.evs (* C2 *) 
-    && List.mem (d, e) p.dep && List.mem (d, e) p.psc (* C3 *)
-    && strongly_matches (p.lab d) (p.lab e) ==> List.mem (d, e) p.hb (* C4 *)
+    && List.mem (d, e) p.dep (* C6 *)
+    && List.for_all (fun d' ->
+        List.for_all (fun e' ->
+          (List.mem (d', d) p.sync 
+            && List.mem (e, e') p.sync 
+            && strongly_matches d' e'
+          ) ==> (List.mem (d', e') p.sync)
+        ) p.evs
+      ) p.evs (* C7a *)
+    && strongly_fences (p.lab d) (p.lab e) ==> (
+      List.mem (d, e) p.sync || List.mem (e, d) p.sync
+      ) (* C7b *)
+    && List.mem (d, e) p.plo (* C8a *)
+    && List.for_all (fun c ->
+      blocks (p.lab c) (p.lab e) ==> (weak_plo c d || weak_plo e c)
+    ) p.evs (* C8b *)
   ) rf
 
-let top_level p rf =
-  List.for_all (fun e ->
-    eval_formula (p.pre e) (* T1 *)
-    && (is_read (p.lab e) ==> List.exists (fun d -> List.mem (d, e) rf) p.evs) (* T2 *)
-  ) p.evs
+let top_level strongly_overlaps strongly_matches strongly_fences p rf =
+  candidate strongly_overlaps strongly_matches strongly_fences p rf
+  && List.for_all (fun e ->
+      (is_read (p.lab e) ==> List.exists (fun d -> List.mem (d, e) rf) p.evs) (* T2 *)
+      && eval_formula (p.pre e) (* T3 *)
+    ) p.evs
+  && eval_formula p.term (* T5 *)
 
-let refines p1 p2 = subset p1 p2
+let refines p1 p2 = subset (=) p1 p2
 
 let empty_pomset = { 
   evs = [];
   lab = empty_env;
   pre = empty_env;
-  pt = empty_env; (* ?? *)
+  pt = (fun _ps f -> f); (* ?? *)
   term = True; (* ?? *)
   dep = [];
-  hb = [];
-  psc = [];
+  sync = [];
+  plo = [];
   rmw = []
 }
 
 (** Semantics *)
+let pomset_skip = [empty_pomset]
+
+let pomsets_par ps1 ps2 =
+  List.map (fun (p1, p2) ->
+    {
+      evs = p1.evs <|> p2.evs;
+      lab = join_env p1.lab p2.lab;
+      pre = join_env p1.pre p2.pre;
+      pt = p1.pt;
+      term = And (p1.term, p2.term);
+
+      (* TODO: The rules say this should be find some superset of p1.dep <|> p2.dep, etc. *)
+      dep = p1.dep <|> p2.dep;
+      sync = p1.sync <|> p2.sync;
+      plo = p1.plo <|> p2.plo;
+      rmw = p1.rmw <|> p2.plo
+    }
+  ) (cross ps1 ps2)
+
+let pomsets_seq ps1 ps2 =
+  List.map (fun (p1, p2) ->
+    let new_dep = p1.dep <|> p2.dep in
+    let new_lab = fun e ->
+      if (List.mem e (p1.evs <-> p2.evs)) 
+      then p1.lab e
+      else (if (List.mem e (p2.evs <-> p1.evs))
+            then p2.lab e
+            else (if (List.mem e (p1.evs <&> p2.evs))
+                      (* TODO: This expression can be incomplete! *)
+                  then List.nth (merge (p1.lab e) (p2.lab e)) 0 
+                  else raise (Invalid_argument "no label available (hkRcjy)")
+            )
+        )
+    in
+    let pre2' e = 
+      let down_e = 
+        if is_write (new_lab e)
+        then List.find_all (fun c -> 
+            List.mem (c, e) new_dep && c <> e
+          ) (p1.evs <|> p2.evs)
+        else p1.evs
+      in
+      p1.pt down_e (p2.pre e)
+    in
+    {
+      empty_pomset with
+      evs = p1.evs <|> p2.evs;
+      lab = new_lab;
+      pre = (fun e ->
+        if (List.mem e (p1.evs <-> p2.evs)) 
+        then p1.pre e
+        else (if (List.mem e (p2.evs <-> p1.evs))
+              then pre2' e
+              else (if (List.mem e (p1.evs <&> p2.evs))
+                    then Or (p1.pre e, pre2' e)
+                    else raise (Invalid_argument "no termination condition available (4yS6bo)")
+              )
+          )
+      );
+      dep = new_dep;
+      sync = p1.sync <|> p2.sync;
+      plo = p1.plo <|> p2.plo;
+      rmw = p1.rmw <|> p2.plo
+    }
+  ) (cross ps1 ps2)
+
 let interp _vs = function
   Skip -> empty_pomset
 | _ -> raise (Invalid_argument "not yet implemented (8aunvy)")
