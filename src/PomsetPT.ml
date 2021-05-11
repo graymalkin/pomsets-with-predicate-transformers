@@ -1,6 +1,8 @@
 open Relation
 open Util
 
+exception Undefined
+
 (** Preliminaries *)
 type value = Val of int [@@deriving show]
 type register = Reg of string [@@deriving show]
@@ -13,6 +15,11 @@ type mem_ref = Ref of string [@@deriving show]
 
 type mode = Wk | Rlx | Acq | Rel | RA | SC [@@deriving show]
 type scope = Grp | Proc | Sys [@@deriving show]
+
+let fresh_register =
+  let reg_id = ref 0 in
+  function () ->
+    incr reg_id; Reg ("s_" ^ (string_of_int !reg_id))
 
 let eval_expr env = function
     V (Val v) -> v
@@ -48,30 +55,57 @@ type formula =
 | Not of formula
 | And of formula * formula
 | Or of formula * formula
+| Implies of formula * formula
 | True
 | False
 [@@deriving show]
 
-let rec sub_reg e r = function
-  | EqReg (r', e') when r = r' -> EqExpr (e,e')
-  | Not f -> Not (sub_reg e r f)
-  | And (f,f') -> And (sub_reg e r f, sub_reg e r f')
-  | Or  (f,f') -> Or  (sub_reg e r f, sub_reg e r f')
-  | f -> f
+let rec formula_map fn = function
+    Expr _ as leaf -> fn leaf
+  | EqExpr _ as leaf -> fn leaf
+  | EqVar _ as leaf -> fn leaf
+  | EqReg _ as leaf -> fn leaf
+  | Symbol _ as leaf -> fn leaf
+  | True as leaf -> fn leaf
+  | False as leaf -> fn leaf
+  | Not f -> Not (formula_map fn f)
+  | And (f1, f2) -> And (formula_map fn f1, formula_map fn f2)
+  | Or (f1, f2) -> Or (formula_map fn f1, formula_map fn f2)
+  | Implies (f1, f2) -> Implies (formula_map fn f1, formula_map fn f2)
 
-let rec sub_loc e l = function
-  | EqVar (l',e') when l = l' -> EqExpr (e,e')
-  | Not f -> Not (sub_loc e l f)
-  | And (f,f') -> And (sub_loc e l f, sub_loc e l f')
-  | Or  (f,f') -> Or  (sub_loc e l f, sub_loc e l f')
-  | f -> f
+let sub_reg e r = 
+  formula_map (function
+    | EqReg (r', e') when r = r' -> EqExpr (e,e')
+    | f -> f
+  )
 
-let rec sub_sym phi s = function
-  | Symbol s' when s = s' -> phi
-  | Not f -> Not (sub_sym phi s f)
-  | And (f,f') -> And (sub_sym phi s f, sub_sym phi s f')
-  | Or  (f,f') -> Or  (sub_sym phi s f, sub_sym phi s f')
+let rename_reg_expr ro rn = function
+    V v -> V v
+  | R r -> if r = ro then R rn else R r
+
+let rename_reg ro rn = 
+  formula_map (function
+    Expr e -> Expr (rename_reg_expr ro rn e)
+  | EqExpr (e1, e2) -> EqExpr (rename_reg_expr ro rn e1, rename_reg_expr ro rn e2)
+  | EqVar (m, e) -> EqVar (m, rename_reg_expr ro rn e)
+  | EqReg (r, e) ->
+    if r = ro 
+    then EqReg (rn, rename_reg_expr ro rn e)
+    else EqReg (r, rename_reg_expr ro rn e)
   | f -> f
+  )
+
+let sub_loc e l =
+  formula_map (function
+    | EqVar (l',e') when l = l' -> EqExpr (e,e')
+    | f -> f
+  )
+
+let sub_sym phi s =
+  formula_map (function
+    | Symbol s' when s = s' -> phi
+    | f -> f
+  )
 
 let rec eval_formula = function
   | EqExpr (e,e') -> eval_expr empty_env e = eval_expr empty_env e'
@@ -109,6 +143,7 @@ let rec convert_cnf = function
   | Not (Or (f1, f2)) -> convert_cnf (And (Not f1, Not f2))
   | f -> f
 
+(* TODO: Implication not implemented! *)
 let rec convert_dnf = function
     Or (f1, f2) -> Or (convert_dnf f1, convert_dnf f2)
   | And (f1, f2) -> 
@@ -133,6 +168,7 @@ let eval_entails f1 f2 =
     | Not _ -> f3 
     | Or _ -> raise (Invalid_argument "argument has Or (DjytOl)")
     | Symbol _ -> raise (Invalid_argument "argument has Symbol (8z6kkd)")
+    | Implies _ -> raise (Invalid_argument "argument has Implies (vQQNlT)")
   in
   let rec eval_dnf = function
     Or (f,f') -> (eval_dnf f) && (eval_dnf f')
@@ -184,6 +220,7 @@ let mem_ref_of = function
 
 let is_access = function Read _ | Write _ -> true | Fence _ -> false
 let is_read   = function Read _ -> true | _ -> false
+let is_write  = function Write _ -> true | _ -> false
 
 let matches a b =
   match (a,b) with
@@ -269,90 +306,205 @@ let strongly_matches eq_grp eq_proc a b =
     || strongly_fences eq_grp eq_proc a b
   )
 
-(** Definition 1.3 *)
+(** Definition 1.2 *)
 type transformer = formula -> formula
+
+(** Definition 1.3 *)
+type transformer_family = event set -> transformer
+
+(* This is a point at which the tool is incomplete. Quantifying all possible 
+   formulae f is uncomputable. *)
+let wf_transformer_family p_univ e f tf =
+  p_univ |> List.for_all (fun d ->
+    p_univ |> List.for_all (fun c ->
+      subset (=) (c <&> e) d ==> eval_entails (tf c f) (tf d f)
+    )
+  )
 
 (* Definition M1-M9 *)
 type pomsetPT = {
-  evs:  event set;                          (* M1 *)
-  lab:  (event, action) environment;        (* M2 *)
-  pre:  (event, formula) environment;       (* M3 *)
+  evs: event set;                                                   (* M1  *)
+  lab: (event, action) environment;                                 (* M2  *)
+  pre: (event, formula) environment;                                (* M3  *)
   
-  (* TODO: definition 1.4 restricts these in a way that we cannot 
-           implement because it universally quantifies formulae. *)
-  pt:   event set -> transformer;           (* M4 *)
+  (* TODO: definition 1.4 restricts these in a way that we cannot implement 
+     because it universally quantifies formulae.  *)
+  pt:   transformer_family;                                         (* M4  *)
   
-  term: formula;                            (* M5 *)
-  dep:  (event, event) relation;            (* M6 *)
-  hb:   (event, event) relation;            (* M7 *)
-  psc:   (event, event) relation;           (* M8 *)
-  rmw:  (event, event) relation;            (* M9 *)
+  term: formula;                                                    (* M5  *)
+  dep:  (event, event) relation;                                    (* M6  *)
+  sync: (event, event) relation;                                    (* M7  *)
+  plo:  (event, event) relation;                                    (* M8  *)
+  rmw:  (event, event) relation                                     (* M9  *)
 }
 
 (* M8a *)
-let wf_psc p =
+let wf_plo p =
   List.iter (fun (d, e) ->
     if overlaps (p.lab d) (p.lab e)
-    then assert (List.mem (d,e) p.psc)
-  ) p.hb
+    then assert (List.mem (d,e) p.plo)
+  ) p.sync
   
 let wf_rmw p =
   List.iter (fun (d, e) ->
-    assert (blocks (p.lab d) (p.lab e)); (* M9a *)
-    assert (List.mem (d, e) p.dep && List.mem (d, e) p.psc); (* M9b *)
+    assert (blocks (p.lab e) (p.lab d));                            (* M9a *)
+    assert (List.mem (d, e) p.sync && List.mem (d, e) p.plo);       (* M9b *)
     List.iter (fun c ->
       if overlaps (p.lab c) (p.lab d)
       then (
         (* M9c i *)
-        assert (List.mem (c, e) p.dep ==> List.mem (c, d) p.dep);
-        assert (List.mem (c, e) p.hb  ==> List.mem (c, d) p.hb);
-        assert (List.mem (c, e) p.psc ==> List.mem (c, d) p.psc);
+        assert (List.mem (c, e) p.dep  ==> List.mem (c, d) p.dep);
+        assert (List.mem (c, e) p.sync ==> List.mem (c, d) p.sync);
+        assert (List.mem (c, e) p.plo  ==> List.mem (c, d) p.plo);
 
         (* M9c ii *)
-        assert (List.mem (d, c) p.dep ==> List.mem (e, c) p.dep);
-        assert (List.mem (d, c) p.hb  ==> List.mem (e, c) p.hb);
-        assert (List.mem (d, c) p.psc ==> List.mem (e, c) p.psc)
+        assert (List.mem (d, c) p.dep  ==> List.mem (e, c) p.dep);
+        assert (List.mem (d, c) p.sync ==> List.mem (e, c) p.sync);
+        assert (List.mem (d, c) p.plo  ==> List.mem (e, c) p.plo)
       )
     ) p.evs
   ) p.rmw
 
-let wf_pomset p = wf_psc p; wf_rmw p
+let wf_pomset p = wf_plo p; wf_rmw p
 
-let candidate strongly_blocks strongly_matches p rf =
-  let weak_psc d' e' =
-      (not (List.mem (d', e') p.psc) || d' = e') 
-    && (strongly_blocks d' e' ==> List.mem (d', e') p.psc)
+let candidate strongly_overlaps strongly_matches strongly_fences p rf =
+  let weak_plo d' e' =
+      ((List.mem (d', e') p.plo) ==> (d' = e'))
+    && (strongly_overlaps d' e' ==> List.mem (d', e') p.plo)
   in
   List.for_all (fun (d, e) ->
     matches (p.lab d) (p.lab e) (* C1 *)
     && List.for_all (fun c -> 
-      blocks (p.lab c) (p.lab e) ==> weak_psc c d || weak_psc e c
+      blocks (p.lab c) (p.lab e) ==> weak_plo c d || weak_plo e c
       ) p.evs (* C2 *) 
-    && List.mem (d, e) p.dep && List.mem (d, e) p.psc (* C3 *)
-    && strongly_matches (p.lab d) (p.lab e) ==> List.mem (d, e) p.hb (* C4 *)
+    && List.mem (d, e) p.dep (* C6 *)
+    && List.for_all (fun d' ->
+        List.for_all (fun e' ->
+          (List.mem (d', d) p.sync 
+            && List.mem (e, e') p.sync 
+            && strongly_matches d' e'
+          ) ==> (List.mem (d', e') p.sync)
+        ) p.evs
+      ) p.evs (* C7a *)
+    && strongly_fences (p.lab d) (p.lab e) ==> (
+      List.mem (d, e) p.sync || List.mem (e, d) p.sync
+      ) (* C7b *)
+    && List.mem (d, e) p.plo (* C8a *)
+    && List.for_all (fun c ->
+      blocks (p.lab c) (p.lab e) ==> (weak_plo c d || weak_plo e c)
+    ) p.evs (* C8b *)
   ) rf
 
-let top_level p rf =
-  List.for_all (fun e ->
-    eval_formula (p.pre e) (* T1 *)
-    && (is_read (p.lab e) ==> List.exists (fun d -> List.mem (d, e) rf) p.evs) (* T2 *)
-  ) p.evs
+let top_level strongly_overlaps strongly_matches strongly_fences p rf =
+  candidate strongly_overlaps strongly_matches strongly_fences p rf
+  && List.for_all (fun e ->
+      (is_read (p.lab e) ==> List.exists (fun d -> List.mem (d, e) rf) p.evs) (* T2 *)
+      && eval_formula (p.pre e) (* T3 *)
+    ) p.evs
+  && eval_formula p.term (* T5 *)
 
-let refines p1 p2 = subset p1 p2
+(* TODO: This has changed (11-05-2021) *)
+(* let refines p1 p2 = subset (=) p1 p2 *)
 
 let empty_pomset = { 
   evs = [];
   lab = empty_env;
   pre = empty_env;
-  pt = empty_env; (* ?? *)
+  pt = (fun _ps f -> f); (* ?? *)
   term = True; (* ?? *)
   dep = [];
-  hb = [];
-  psc = [];
+  sync = [];
+  plo = [];
   rmw = []
 }
 
 (** Semantics *)
+let pomset_skip = [empty_pomset]
+
+
+(* Note, that for P1 it is acceptable to use a normal union operator, as the IDs 
+  in p1 and p2 are always unique - generated by fresh_id () - so disjointness is 
+  always preserved. *)
+let pomsets_par_gen ps1 ps2 =
+  List.map (fun (p1, p2) ->
+    {
+      evs = p1.evs <|> p2.evs;                                      (* P1  *)
+      lab = join_env p1.lab p2.lab;                                 (* P2  *)
+      pre = join_env p1.pre p2.pre;                                 (* P3a,b *)
+      pt = p1.pt;                                                   (* P4  *)
+      term = And (p1.term, p2.term);                                (* P5  *)
+
+      dep = p1.dep <|> p2.dep;                                      (* P6  *)
+      sync = p1.sync <|> p2.sync;                                   (* P7  *)
+      plo = p1.plo <|> p2.plo;                                      (* P8  *)
+      rmw = p1.rmw <|> p2.plo                                       (* P9  *)
+    }
+  ) (cross ps1 ps2)
+
+let pomsets_par_filer ps = ps
+
+let write_gen vs x m mode scope tid = 
+  vs |> List.map (fun v ->
+    let v = Val v in
+    let id = fresh_id () in
+    { 
+      empty_pomset with
+      evs = [id];                                                   (* W1  *)
+      lab = bind id (Write (tid, mode, scope, x, v)) empty_env;     (* W2  *)
+      pre = bind id (EqExpr (m, V v)) empty_env;                    (* W3  *)
+      pt = (fun _d f -> sub_loc m x f);                             (* W4  *)
+      term = EqExpr (m, V v);                                       (* W5b *)
+    }
+  ) <|> [
+    {
+      empty_pomset with 
+      pt = (fun _d f -> sub_loc m x f);                             (* W4  *)
+      term = False                                                  (* W5a *)
+    }
+  ]
+
+let write_filter ps = ps
+
+let fence_gen mode scope tid = 
+  let id = fresh_id () in
+  [
+    {
+      empty_pomset with
+      evs = [id];                                                   (* F1  *)
+      lab = bind id (Fence (tid, mode, scope)) empty_env;           (* F2  *)
+      pt = (fun _d f -> f);                                         (* F4  *)
+    }
+  ] <|> [{empty_pomset with term = False}]                          (* F5  *)
+
+let fence_filter ps = ps
+
+let read_gen vs r x mode scope tid = 
+  vs |> List.map (fun v ->
+    let id = fresh_id () in
+    let v = Val v in
+    let se = fresh_register () in
+    {
+      empty_pomset with
+      evs = [id];                                                   (* R1  *)
+      lab = bind id (Read (tid, mode, scope, x, v)) empty_env;      (* R2  *)
+      pt = (fun d f ->
+        if List.mem id d (* E n D <> empty *)
+        then Implies (EqExpr (V v, R se), rename_reg se r f)        (* R4a *)
+        else Implies (                                              (* R4b *)
+            Or (EqExpr (V v, R se), EqVar (x, R se)), 
+            rename_reg se r f
+          )
+      )
+    }
+  ) <|> [
+    { 
+      empty_pomset with
+      term = if mode_order mode Acq then False else True            (* R5  *)
+    }
+  ]
+
+let read_filter ps = ps
+
 let interp _vs = function
   Skip -> empty_pomset
 | _ -> raise (Invalid_argument "not yet implemented (8aunvy)")

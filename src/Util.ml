@@ -10,6 +10,7 @@ let fresh_id =
 type ('a, 'b) environment = 'a -> 'b
 let bind k v env = function k' -> if k = k' then v else env k'
 let empty_env = function _ -> raise Not_found
+let join_env e1 e2 p = try e1 p with Not_found -> e2 p
 
 let default d = function
   None -> d
