@@ -88,10 +88,8 @@ let rename_reg ro rn =
     Expr e -> Expr (rename_reg_expr ro rn e)
   | EqExpr (e1, e2) -> EqExpr (rename_reg_expr ro rn e1, rename_reg_expr ro rn e2)
   | EqVar (m, e) -> EqVar (m, rename_reg_expr ro rn e)
-  | EqReg (r, e) ->
-    if r = ro 
-    then EqReg (rn, rename_reg_expr ro rn e)
-    else EqReg (r, rename_reg_expr ro rn e)
+  | EqReg (r, e) when r = ro -> EqReg (rn, rename_reg_expr ro rn e)
+  | EqReg (r, e) -> EqReg (r, rename_reg_expr ro rn e)
   | f -> f
   )
 
@@ -443,27 +441,15 @@ let pomsets_par_gen ps1 ps2 =
 
 let pomsets_par_filer ps = ps
 
-let write_gen vs x m mode scope tid = 
-  vs |> List.map (fun v ->
-    let v = Val v in
-    let id = fresh_id () in
-    { 
-      empty_pomset with
-      evs = [id];                                                   (* W1  *)
-      lab = bind id (Write (tid, mode, scope, x, v)) empty_env;     (* W2  *)
-      pre = bind id (EqExpr (m, V v)) empty_env;                    (* W3  *)
-      pt = (fun _d f -> sub_loc m x f);                             (* W4  *)
-      term = EqExpr (m, V v);                                       (* W5b *)
-    }
-  ) <|> [
+let let_gen r m = 
+  [
     {
       empty_pomset with 
-      pt = (fun _d f -> sub_loc m x f);                             (* W4  *)
-      term = False                                                  (* W5a *)
+      pt = (fun _d f -> sub_reg m r f)
     }
   ]
 
-let write_filter ps = ps
+let let_filter ps = ps
 
 let fence_gen mode scope tid = 
   let id = fresh_id () in
@@ -499,11 +485,35 @@ let read_gen vs r x mode scope tid =
   ) <|> [
     { 
       empty_pomset with
-      term = if mode_order mode Acq then False else True            (* R5  *)
+      term = if mode_order mode Acq then False else True;           (* R5  *)
+      (* TODO: It is not clear what R4c means, yet. *)
+      (* pt = ... *)                                                (* R4c *)
     }
   ]
 
 let read_filter ps = ps
+
+let write_gen vs x m mode scope tid = 
+  vs |> List.map (fun v ->
+    let v = Val v in
+    let id = fresh_id () in
+    { 
+      empty_pomset with
+      evs = [id];                                                   (* W1  *)
+      lab = bind id (Write (tid, mode, scope, x, v)) empty_env;     (* W2  *)
+      pre = bind id (EqExpr (m, V v)) empty_env;                    (* W3  *)
+      pt = (fun _d f -> sub_loc m x f);                             (* W4  *)
+      term = EqExpr (m, V v);                                       (* W5b *)
+    }
+  ) <|> [
+    {
+      empty_pomset with 
+      pt = (fun _d f -> sub_loc m x f);                             (* W4  *)
+      term = False                                                  (* W5a *)
+    }
+  ]
+
+let write_filter ps = ps
 
 let interp _vs = function
   Skip -> empty_pomset
