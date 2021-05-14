@@ -416,6 +416,25 @@ let empty_pomset = {
   rmw = []
 }
 
+(** Pomset Utils *)
+let eqr_to_mapping eqr =
+  function e -> 
+    try List.assoc e eqr
+    with Not_found -> e
+
+let relabel f ps =
+  { 
+    evs = List.map f ps.evs;
+    lab = (fun e -> ps.lab (f e));
+    pre = (fun e -> ps.pre (f e));
+    pt = (fun d form -> ps.pt (List.map f d) form);
+    term = ps.term;
+    dep = List.map (fun (l, r) -> f l, f r) ps.dep;
+    sync = List.map (fun (l, r) -> f l, f r) ps.sync;
+    plo = List.map (fun (l, r) -> f l, f r) ps.plo;
+    rmw = List.map (fun (l, r) -> f l, f r) ps.rmw;
+  }
+
 (** Semantics *)
 let pomset_skip = [empty_pomset]
 
@@ -440,6 +459,91 @@ let pomsets_par_gen ps1 ps2 =
   ) (cross ps1 ps2)
 
 let pomsets_par_filer ps = ps
+
+
+(** Q1: we seem to be able to merge reads/writes etc, is that right? *)
+(** Q2: there's no index on the predicate transformer in k2', we've chosen E_1, is that right? *)
+(** Q3: we're using the minimal dep relation, rather than any subset -- is this safe? *)
+let pomsets_seq_gen ps1 ps2 =
+  (cross ps1 ps2) |> List.map (fun (p1, p2) ->
+    List.map (fun eqr ->
+      let f = eqr_to_mapping eqr in
+      let lab_new = join_env p1.lab p2.lab in
+      let down e = List.find_all (fun c -> List.mem (c, e) (p1.dep <|> p2.dep)) (p1.evs <|> p2.evs) in
+      let k2' e = 
+        if is_read (lab_new e) 
+        then p1.pt p1.evs (p2.pre e) (* TODO: clarify that this is the correct index into the PT *)
+        else p1.pt (down e) (p2.pre e)
+      in
+      (* eqr is used to map ids from p1 into ids to p2 to generate merge opportunities *)
+      let p1 = relabel f p1 in 
+      {
+        evs = p1.evs <|> p2.evs;
+        lab = lab_new;                                              (* S2  *)
+
+        pre = (fun e ->
+          let pre1 = 
+            if List.mem e p1.evs && List.mem e p2.evs
+            then Or (p1.pre e, k2' e)                               (* S3c  *)
+            else (
+              if List.mem e (p1.evs <-> p2.evs)
+              then p1.pre e                                         (* S3a *)
+              else p2.pre e                                         (* S3b *)
+            )
+          in
+          if is_release (p2.lab e)
+          then And (p1.term, pre1)                                  (* S3d *)
+          else pre1
+        );
+
+        pt = (fun d f -> p1.pt d (p2.pt d f));                      (* S4  *)
+        term = And (p1.term, p1.pt p1.evs p2.term);                 (* S5  *)
+        dep = p1.dep <|> p2.dep;                                    (* S6  *)
+        sync = p1.sync <|> p2.sync;                                 (* S7  *)
+        plo = p1.plo <|> p2.plo;                                    (* S8  *)
+        rmw = p1.rmw <|> p2.plo                                     (* S9  *)
+
+      }
+    ) (pairings p1.evs p2.evs)
+  )
+
+let if_gen cond ps1 ps2 =
+  (cross ps1 ps2) |> List.map (fun (p1, p2) -> 
+      List.map (fun eqr ->
+      let f = eqr_to_mapping eqr in
+      let p1 = relabel f p1 in 
+      {
+        evs = p1.evs <|> p2.evs;                                    (* I1  *)
+        lab = join_env p1.lab p2.lab;                               (* I2  *)
+
+        pre = (fun e ->
+            if List.mem e p1.evs && List.mem e p2.evs
+            then Or (                                               (* I3c *)
+              And (cond, p1.pre e),
+              And (Not cond, p2.pre e)
+            )
+            else (
+              if List.mem e p1.evs
+              then And (cond, p1.pre e)                             (* I3a *)
+              else And (Not cond, p2.pre e)                         (* I3b *)
+            )
+          ); 
+        
+        pt = (fun d f -> 
+          Or (
+            And (cond, p1.pt d f),
+            And (Not cond, p2.pt d f)
+          )
+        );
+        
+        term = Or (And (cond, p1.term), And (Not cond, p2.term));   (* I5  *)
+        dep = p1.dep <|> p2.dep;                                    (* I6  *)
+        sync = p1.sync <|> p2.sync;                                 (* I7  *)
+        plo = p1.plo <|> p2.plo;                                    (* I8  *)
+        rmw = p1.rmw <|> p2.plo                                     (* I9  *)
+      }
+    )
+  )
 
 let let_gen r m = 
   [

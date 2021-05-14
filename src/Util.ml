@@ -2,6 +2,7 @@ exception Not_implemented
 
 let curry f a b = f (a, b)
 let uncurry f (a, b) = f a b
+let id = fun x -> x
 
 let fresh_id =
   let internal_id = ref 0 in
@@ -18,10 +19,6 @@ let default d = function
 
 let implies p q = if p then q else true
 let (==>) = implies
-
-let rec repeat x = function
-    0 -> []
-  | n -> x :: repeat x (n-1)
 
 let rec concat_nonempty f = function
   [l] -> l

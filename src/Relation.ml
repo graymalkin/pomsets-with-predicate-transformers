@@ -33,6 +33,19 @@ let rec powerset l =
       let l = powerset xs in 
       l @ (List.map (fun y -> x :: y) l)
 
+let rm x xs = List.filter ((<>) x) xs
+
+let rec pairings a b =
+  match a with
+    ah :: at -> 
+    let possible_links = (ah, None) :: List.map (fun be -> ah, Some be) b in
+    List.flatten @@ List.map (fun (al, bl) ->
+      match bl with
+        Some bl -> List.map (fun r -> (al, bl) :: r) (pairings at (rm bl b)) 
+      | None -> pairings at b
+    ) possible_links
+  | [] -> [[]]
+
 let rel_of_set xs = List.map (fun x -> (x, x)) xs
 
 let rel_option d r = rel_of_set d <|> r
