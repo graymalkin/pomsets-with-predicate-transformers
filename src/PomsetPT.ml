@@ -465,7 +465,7 @@ let pomsets_par_filer ps = ps
 (** Q2: there's no index on the predicate transformer in k2', we've chosen E_1, is that right? *)
 (** Q3: we're using the minimal dep relation, rather than any subset -- is this safe? *)
 let pomsets_seq_gen ps1 ps2 =
-  (cross ps1 ps2) |> List.map (fun (p1, p2) ->
+  List.flatten ((cross ps1 ps2) |> List.map (fun (p1, p2) ->
     List.map (fun eqr ->
       let f = eqr_to_mapping eqr in
       let lab_new = join_env p1.lab p2.lab in
@@ -505,10 +505,10 @@ let pomsets_seq_gen ps1 ps2 =
 
       }
     ) (pairings p1.evs p2.evs)
-  )
+  ))
 
 let if_gen cond ps1 ps2 =
-  (cross ps1 ps2) |> List.map (fun (p1, p2) -> 
+  List.flatten ((cross ps1 ps2) |> List.map (fun (p1, p2) -> 
       List.map (fun eqr ->
       let f = eqr_to_mapping eqr in
       let p1 = relabel f p1 in 
@@ -542,10 +542,10 @@ let if_gen cond ps1 ps2 =
         plo = p1.plo <|> p2.plo;                                    (* I8  *)
         rmw = p1.rmw <|> p2.plo                                     (* I9  *)
       }
-    )
-  )
+    ) (pairings p1.evs p2.evs)
+  ))
 
-let let_gen r m = 
+let assign_gen r m = 
   [
     {
       empty_pomset with 
@@ -553,7 +553,7 @@ let let_gen r m =
     }
   ]
 
-let let_filter ps = ps
+let assign_filter ps = ps
 
 let fence_gen mode scope tid = 
   let id = fresh_id () in
@@ -597,7 +597,7 @@ let read_gen vs r x mode scope tid =
 
 let read_filter ps = ps
 
-let write_gen vs x m mode scope tid = 
+let write_gen vs x mode scope m tid = 
   vs |> List.map (fun v ->
     let v = Val v in
     let id = fresh_id () in
@@ -619,6 +619,13 @@ let write_gen vs x m mode scope tid =
 
 let write_filter ps = ps
 
-let interp _vs = function
-  Skip -> empty_pomset
-| _ -> raise (Invalid_argument "not yet implemented (8aunvy)")
+let rec interp vs tid = function
+  Assign (r, e) -> assign_gen r e
+| Skip -> [empty_pomset]
+| Load (r, x, mode, scope) -> read_gen vs r x mode scope tid
+| LeftPar (p1, tid', p2) -> pomsets_par_gen (interp vs tid p1) (interp vs tid' p2)
+| Store (x, mode, scope, e) -> write_gen vs x mode scope e tid
+| Sequence (p1, p2) -> pomsets_seq_gen (interp vs tid p1) (interp vs tid p2)
+| FenceStmt (mode, scope) -> fence_gen mode scope tid
+| Ite (e, p1, p2) -> if_gen (EqExpr (e, V (Val 0))) (interp vs tid p1) (interp vs tid p2)
+| _ -> raise Not_implemented
