@@ -1,6 +1,10 @@
-all:
+all: build test
+
+build:
 	dune build
 	@echo ""
+
+test:
 	dune runtest
 	@echo ""
 

@@ -1,4 +1,4 @@
-TOOL = ../pomsets.native
+TOOL = ../_build/default/src/pomsets.exe
 OPTIONS = --tex
 TEX_OPTIONS = --interaction=batchmode
 PREAMBLE = ./latex-template/preamble.tex
