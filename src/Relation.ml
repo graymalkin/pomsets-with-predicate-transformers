@@ -81,11 +81,11 @@ let subset eq a b =
 
 let equal_set eq a b = subset eq a b && subset eq b a
 
-let reflexive d r = subset (=) r (rel_of_set d)
+let reflexive d r = subset (=) (rel_of_set d) r
 
 let antisymmetric r =
   List.for_all (fun (a, b) ->
-    List.mem (b, a) r ==> a = b
+    (List.mem (b, a) r) ==> (a = b)
   ) r
 
 let transitive r =
