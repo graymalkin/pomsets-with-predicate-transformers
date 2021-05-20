@@ -1,3 +1,5 @@
+open Util
+
 type 'a set = 'a list
 [@@deriving show, eq]
 
@@ -60,7 +62,49 @@ let seq = rel_sequence
 
 let rel_invert r = List.map (fun (a, b) -> (b, a)) r
 let inv = rel_invert
-        
+
+let injective d r =
+  List.for_all (fun x ->
+    List.length (List.filter (fun (x', _) -> x = x') r) = 1
+  ) d
+
+let surjective d r = 
+  List.for_all (fun x ->
+    List.exists (fun (x', _) -> x = x') r
+  ) d
+
+let bijection d r = injective d r && surjective d r
+
+let subset eq a b =
+  let cmp a b = if eq a b then 0 else 1 in
+  List.for_all (fun y -> BatList.mem_cmp cmp y b) a
+
+let equal_set eq a b = subset eq a b && subset eq b a
+
+let reflexive d r = subset (=) r (rel_of_set d)
+
+let antisymmetric r =
+  List.for_all (fun (a, b) ->
+    List.mem (b, a) r ==> a = b
+  ) r
+
+let transitive r =
+  List.for_all (fun (a, b) ->
+    List.for_all (fun (b', c) ->
+      b = b' ==> List.mem (a, c) r
+    ) r
+  ) r
+
+let total d r =
+  List.for_all (fun a ->
+    List.for_all (fun b ->
+      List.mem (a, b) r || List.mem (b, a) r
+    ) d
+  ) d
+
+let partial_order d r = reflexive d r && antisymmetric r && transitive r
+let total_order d r  = partial_order d r && total d r
+
 open Graph
 module EventGraph = Imperative.Digraph.Concrete(struct
   type t = int
@@ -88,49 +132,4 @@ let rtc d r = transitive_closure ~reflexive:true r <|> rel_of_set d
 
 let irreflexive r = not (List.exists (fun (a, b) -> a = b) r)
 let acyclic r = irreflexive (tc r)
-          
-let pp_set pp_a fmt xs =
-  if xs = []
-  then Format.fprintf fmt (* "∅" *) "\\{\\}"
-  else (
-    Format.fprintf fmt "\\{";
-    let rec inner xs = 
-      match xs with
-        [] -> failwith "invarient broken"
-      | [x] ->
-        Format.fprintf fmt "%a" pp_a x
-      | (x::xs) ->
-        Format.fprintf fmt "%a, " pp_a x;
-        inner xs
-    in
-    inner xs;
-    Format.fprintf fmt "\\}"
-  )
-
-let pp_edge pp_a pp_b fmt (a, b) = Format.fprintf fmt "(%a, %a)" pp_a a pp_b b
-
-let pp_relation pp_a pp_b fmt xs = pp_set (pp_edge pp_a pp_b) fmt xs
-
-let equal_set eq a b =
-  let cmp a b = if eq a b then 0 else 1 in
-  List.for_all (fun y -> BatList.mem_cmp cmp y b) a &&
-  List.for_all (fun x -> BatList.mem_cmp cmp x a) b
-
-let subset eq a b =
-  let cmp a b = if eq a b then 0 else 1 in
-  List.for_all (fun y -> BatList.mem_cmp cmp y b) a
-
-let pp_pair pp_a fmt (a, b) =
-  Format.fprintf fmt "(%a, %a)" pp_a a pp_a b
-   
-let pp_list pp_elem fmt xs =
-  Format.fprintf fmt "{";
-  let rec go = function
-      [] -> Format.fprintf fmt "}"
-    | [x] -> Format.fprintf fmt "%a}" pp_elem x
-    | x::xs ->
-       Format.fprintf fmt "%a, " pp_elem x;
-       go xs
-  in
-  go xs
 
