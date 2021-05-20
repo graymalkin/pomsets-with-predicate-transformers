@@ -336,34 +336,75 @@ type pomsetPT = {
   rmw:  (event, event) relation                                     (* M9  *)
 }
 
-(* M8a *)
+let empty_pomset = { 
+  evs = [];
+  lab = empty_env;
+  pre = empty_env;
+  pt = (fun _ps f -> f); (* ?? *)
+  term = True; (* ?? *)
+  dep = [];
+  sync = [];
+  plo = [];
+  rmw = []
+}
+
+(* M2 *)
+let wf_lab p = complete p.evs p.lab 
+
+(* M3 *)
+let wf_pre p = complete p.evs p.pre
+
+(* M4 *)
+(* Note: this is impractical to express, it requires quantifying all possible
+   formulae *)
+let wf_pt _p = true
+
+(* M6 *)
+let wf_dep p = partial_order p.evs p.dep
+
+(* M7 *)
+let wf_sync p = partial_order p.evs p.sync
+
+(* M8 *)
 let wf_plo p =
-  List.iter (fun (d, e) ->
-    if overlaps (p.lab d) (p.lab e)
-    then assert (List.mem (d,e) p.plo)
+     partial_order p.evs p.plo
+  && List.for_all (fun (d, e) -> 
+    overlaps (p.lab d) (p.lab e) ==> (List.mem (d,e) p.plo)         (* M8a *)
   ) p.sync
-  
+
+(* M9 *)
 let wf_rmw p =
-  List.iter (fun (d, e) ->
-    assert (blocks (p.lab e) (p.lab d));                            (* M9a *)
-    assert (List.mem (d, e) p.sync && List.mem (d, e) p.plo);       (* M9b *)
-    List.iter (fun c ->
-      if overlaps (p.lab c) (p.lab d)
-      then (
+  List.for_all (fun (d, e) ->
+       (blocks (p.lab e) (p.lab d))                                 (* M9a *)
+    && (List.mem (d, e) p.sync && List.mem (d, e) p.plo)            (* M9b *)
+    && List.for_all (fun c ->
+      overlaps (p.lab c) (p.lab d) ==> (
         (* M9c i *)
-        assert (List.mem (c, e) p.dep  ==> List.mem (c, d) p.dep);
-        assert (List.mem (c, e) p.sync ==> List.mem (c, d) p.sync);
-        assert (List.mem (c, e) p.plo  ==> List.mem (c, d) p.plo);
+           (List.mem (c, e) p.dep  ==> List.mem (c, d) p.dep)
+        && (List.mem (c, e) p.sync ==> List.mem (c, d) p.sync)
+        && (List.mem (c, e) p.plo  ==> List.mem (c, d) p.plo)
 
         (* M9c ii *)
-        assert (List.mem (d, c) p.dep  ==> List.mem (e, c) p.dep);
-        assert (List.mem (d, c) p.sync ==> List.mem (e, c) p.sync);
-        assert (List.mem (d, c) p.plo  ==> List.mem (e, c) p.plo)
+        && (List.mem (d, c) p.dep  ==> List.mem (e, c) p.dep)
+        && (List.mem (d, c) p.sync ==> List.mem (e, c) p.sync)
+        && (List.mem (d, c) p.plo  ==> List.mem (e, c) p.plo)
       )
     ) p.evs
   ) p.rmw
 
-let wf_pomset p = wf_plo p; wf_rmw p
+let wf_pomset p = 
+     wf_lab p
+  && wf_pre p
+  && wf_pt p
+  && wf_dep p
+  && wf_sync p
+  && wf_plo p
+  && wf_rmw p
+
+
+(* We need to grow a candidate pomset such that with minimal changes to dep, 
+   plo, etc. we have a candidate pomset as per definition C below. *)
+let grow_candidate _strongly_overlaps _strongly_matches _strongly_fences _p _rf = [empty_pomset]
 
 let candidate strongly_overlaps strongly_matches strongly_fences p rf =
   let weak_plo d' e' =
