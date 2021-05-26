@@ -1,14 +1,13 @@
 open Relation
 open Util
 
-exception Undefined
-
 (** Preliminaries *)
 type value = Val of int [@@deriving show]
 type register = Reg of string [@@deriving show]
 type expr = 
   V of value
 | R of register
+| Eq of expr * expr
 [@@deriving show]
 type thread_id = Tid of int [@@deriving show]
 type mem_ref = Ref of string [@@deriving show]
@@ -21,9 +20,10 @@ let fresh_register =
   function () ->
     incr reg_id; Reg ("s_" ^ (string_of_int !reg_id))
 
-let eval_expr env = function
+let rec eval_expr env = function
     V (Val v) -> v
   | R (Reg r) -> env r
+  | Eq (e1, e2) -> if (eval_expr env e1 = eval_expr env e2) then 1 else 0
 
 type grammar = 
   Skip
@@ -79,9 +79,10 @@ let sub_reg e r =
     | f -> f
   )
 
-let rename_reg_expr ro rn = function
+let rec rename_reg_expr ro rn = function
     V v -> V v
   | R r -> if r = ro then R rn else R r
+  | Eq (e1, e2) -> Eq (rename_reg_expr ro rn e1, rename_reg_expr ro rn e2)
 
 let rename_reg ro rn = 
   formula_map (function
