@@ -116,14 +116,15 @@ let rec eval_formula = function
   | _ -> false
 
 let rec negate = function
-    And (f1,f2) -> Or (negate f1, negate f2)
+    Not f -> f
+  | And (f1,f2) -> Or (negate f1, negate f2)
   | Or (f1,f2) -> And (negate f1, negate f2)
-  | Not f -> f
+  | Implies (f1, f2) -> And (f1, Not f2)
   | f -> Not f
 
 let extract_conjunt_clauses = function
     And (f1, f2) -> [f1;f2]
-  | Or _ -> raise (Invalid_argument "argument not in DNF (X4jLx0)")
+  | Or _ -> raise (Invalid_argument "argument not in CNF (X4jLx0)")
   | f -> [f]
 
 let extract_disjunt_clauses = function
