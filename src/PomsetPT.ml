@@ -218,6 +218,11 @@ let mem_ref_of = function
   | Read (_,_,_,x,_) -> Some x
   | Fence _ -> None
 
+let value_of = function
+    Write (_,_,_,_,v)
+  | Read (_,_,_,_,v) -> Some v
+  | Fence _ -> None
+
 let is_access = function Read _ | Write _ -> true | Fence _ -> false
 let is_read   = function Read _ -> true | _ -> false
 let is_write  = function Write _ -> true | _ -> false
@@ -338,11 +343,12 @@ type pomsetPT = {
   rmw:  (event, event) relation                                     (* M9  *)
 }
 
+(* TODO: Is this a reasonable definition for pt and term? *)
 let empty_pomset = { 
   evs = [];
   lab = empty_env;
   pre = empty_env;
-  pt = (fun _ps f -> f); (* ?? *)
+  pt = (fun _ps f -> f); (* Identity predicate transformer *)
   term = True; (* ?? *)
   dep = [];
   sync = [];
@@ -371,16 +377,16 @@ let wf_sync p = partial_order p.evs p.sync
 let wf_plo p =
      partial_order p.evs p.plo
   && List.for_all (fun (d, e) -> 
-    overlaps (p.lab d) (p.lab e) ==> (List.mem (d,e) p.plo)         (* M8a *)
+    (overlaps <..> p.lab) d e ==> (List.mem (d,e) p.plo)            (* M8a *)
   ) p.sync
 
 (* M9 *)
 let wf_rmw p =
   List.for_all (fun (d, e) ->
-       (blocks (p.lab e) (p.lab d))                                 (* M9a *)
+       ((blocks <..> p.lab) e d)                                    (* M9a *)
     && (List.mem (d, e) p.sync && List.mem (d, e) p.plo)            (* M9b *)
     && List.for_all (fun c ->
-      overlaps (p.lab c) (p.lab d) ==> (
+      ((overlaps <..> p.lab) c d ==>
         (* M9c i *)
            (List.mem (c, e) p.dep  ==> List.mem (c, d) p.dep)
         && (List.mem (c, e) p.sync ==> List.mem (c, d) p.sync)
@@ -406,17 +412,75 @@ let wf_pomset p =
 
 (* We need to grow a candidate pomset such that with minimal changes to dep, 
    plo, etc. we have a candidate pomset as per definition C below. *)
-let grow_candidate _strongly_overlaps _strongly_matches _strongly_fences _p _rf = [empty_pomset]
+let grow_candidate strongly_overlaps strongly_matches strongly_fences rf p =
+  let _strongly_overlaps = strongly_overlaps <..> p.lab in
+  let strongly_matches = strongly_matches <..> p.lab in
+  let strongly_fences = strongly_fences <..> p.lab in
 
-let candidate strongly_overlaps strongly_matches strongly_fences p rf =
+  (* d -> e ∈ rf => d -> e ∈ dep *)
+  let c6_expand = { p with dep = p.dep <|> rf; } in
+  
+  (* if d' <= d -rf-> e, and λ(d') strongly matches λ(e') then d' <= e' *)
+  let c7a = List.flatten @@ List.map (fun d' ->
+      List.fold_right (fun (d, e) acc ->
+        if List.mem (d', d) c6_expand.dep && strongly_matches d e 
+        then { c6_expand with dep = (d, e) :: c6_expand.dep } :: acc
+        else acc
+      ) rf []
+    ) c6_expand.evs
+  in
+
+  let c7b = List.flatten @@ List.map (fun p -> 
+      List.fold_right (fun (d, e)  acc->
+        if strongly_fences d e 
+        then { p with dep = (d, e) :: p.dep} :: { p with dep = (e, d) :: p.dep} :: acc
+        else acc
+      ) (cross p.evs p.evs) []
+    ) c7a
+  in
+
+  (* d -> e ∈ rf => d -> e ∈ plo *)
+  let c8a = List.map (fun p -> { p with plo = p.plo <|> rf; }) c7b in
+(* 
+  let c8b' = List.flatten @@ List.map (fun p -> 
+      List.fold_right (fun (d, e)  acc->
+        List.map (fun c -> 
+          if blocks c e
+          then (
+            if c = d
+            then { p with dep = (c, e) :: p.dep } :: { p with dep = (c, e) :: p.dep } :: acc
+          )
+          else acc
+        )
+      ) (cross p.evs p.evs) []
+    ) c8a
+  in *)
+
+  (* send help *)
+  (* let _c8b = List.flatten @@ List.map (fun p -> 
+    List.fold_right (fun (d, e) acc -> 
+      List.map (fun c -> 
+        if blocks (p.lab c) (p.lab e)
+        then { p with }
+
+      ) p.evs
+     ) rf []
+  ) c8a *)
+  c8a
+
+let candidate strongly_overlaps strongly_matches strongly_fences rf p =
+  let strongly_overlaps = strongly_overlaps <..> p.lab in
+  let strongly_matches = strongly_matches <..> p.lab in
+  let strongly_fences = strongly_fences <..> p.lab in
   let weak_plo d' e' =
       ((List.mem (d', e') p.plo) ==> (d' = e'))
     && (strongly_overlaps d' e' ==> List.mem (d', e') p.plo)
   in
-  List.for_all (fun (d, e) ->
-    matches (p.lab d) (p.lab e) (* C1 *)
+  injective (List.filter (is_read <.> p.lab) p.evs) rf              (* C1  *)
+  && List.for_all (fun (d, e) ->
+       matches (p.lab d) (p.lab e)                                  (* C2  *)
     && List.for_all (fun c -> 
-      blocks (p.lab c) (p.lab e) ==> weak_plo c d || weak_plo e c
+      (blocks <..> p.lab) c e ==> weak_plo c d || weak_plo e c
       ) p.evs (* C2 *) 
     && List.mem (d, e) p.dep (* C6 *)
     && List.for_all (fun d' ->
@@ -427,17 +491,17 @@ let candidate strongly_overlaps strongly_matches strongly_fences p rf =
           ) ==> (List.mem (d', e') p.sync)
         ) p.evs
       ) p.evs (* C7a *)
-    && strongly_fences (p.lab d) (p.lab e) ==> (
+    && strongly_fences d e ==> (
       List.mem (d, e) p.sync || List.mem (e, d) p.sync
       ) (* C7b *)
     && List.mem (d, e) p.plo (* C8a *)
     && List.for_all (fun c ->
-      blocks (p.lab c) (p.lab e) ==> (weak_plo c d || weak_plo e c)
+      (blocks <..> p.lab) c e ==> (weak_plo c d || weak_plo e c)
     ) p.evs (* C8b *)
   ) rf
 
-let top_level strongly_overlaps strongly_matches strongly_fences p rf =
-  candidate strongly_overlaps strongly_matches strongly_fences p rf
+let top_level strongly_overlaps strongly_matches strongly_fences rf p =
+  candidate strongly_overlaps strongly_matches strongly_fences rf p
   && List.for_all (fun e ->
       (is_read (p.lab e) ==> List.exists (fun d -> List.mem (d, e) rf) p.evs) (* T2 *)
       && eval_formula (p.pre e) (* T3 *)
@@ -446,18 +510,6 @@ let top_level strongly_overlaps strongly_matches strongly_fences p rf =
 
 (* TODO: This has changed (11-05-2021) *)
 (* let refines p1 p2 = subset (=) p1 p2 *)
-
-let empty_pomset = { 
-  evs = [];
-  lab = empty_env;
-  pre = empty_env;
-  pt = (fun _ps f -> f); (* ?? *)
-  term = True; (* ?? *)
-  dep = [];
-  sync = [];
-  plo = [];
-  rmw = []
-}
 
 (** Pomset Utils *)
 let eqr_to_mapping eqr =
@@ -504,18 +556,34 @@ let pomsets_par_gen ps1 ps2 =
 let pomsets_par_filer ps = ps
 
 
-(** Q1: we seem to be able to merge reads/writes etc, is that right? *)
-(** Q2: there's no index on the predicate transformer in k2', we've chosen E_1, is that right? *)
-(** Q3: we're using the minimal dep relation, rather than any subset -- is this safe? *)
+(** TODO: we're using the minimal dep relation, rather than any subset -- is this safe? *)
+(** We are now computing all the possible reads that could interfere, see note below. *)
 let pomsets_seq_gen ps1 ps2 =
   List.flatten ((cross ps1 ps2) |> List.map (fun (p1, p2) ->
-    List.map (fun eqr ->
+    (* Note: this is an over-approximation of the read sets. If we could inspect the predicate
+    transformers then we could generate a precise set of reads which could "interfere" with c in
+    the definition of down. *)
+    let read_sets = powerset ((List.filter (is_read <.> p1.lab) p1.evs) <|> (List.filter (is_read <.> p2.lab) p2.evs)) in
+
+    (* The overlap of E1 and E2 must satisfy some compatibility predicate *)
+    (* TODO: is this choice of predicate actually correct? It has bad code-smell *)
+    let eqrs = List.filter (fun eqr ->
+        List.for_all (fun (a, b) -> 
+          try merge (p1.lab a) (p2.lab b) <> []
+          with Invalid_argument _ -> false (*  Events are un-mergable because of incompatible modes *)
+        ) eqr
+      ) (pairings p1.evs p2.evs)
+    in
+
+
+    List.flatten @@ (read_sets |> List.map (fun rs -> 
+      List.map (fun eqr ->
       let f = eqr_to_mapping eqr in
       let lab_new = join_env p1.lab p2.lab in
-      let down e = List.find_all (fun c -> List.mem (c, e) (p1.dep <|> p2.dep)) (p1.evs <|> p2.evs) in
+      let down e = List.find_all (fun c -> List.mem (c, e) (p1.dep <|> p2.dep)) rs in
       let k2' e = 
         if is_read (lab_new e) 
-        then p1.pt p1.evs (p2.pre e) (* TODO: clarify that this is the correct index into the PT *)
+        then p1.pt p1.evs (p2.pre e)
         else p1.pt (down e) (p2.pre e)
       in
       (* eqr is used to map ids from p1 into ids to p2 to generate merge opportunities *)
@@ -547,12 +615,12 @@ let pomsets_seq_gen ps1 ps2 =
         rmw = p1.rmw <|> p2.plo                                     (* S9  *)
 
       }
-    ) (pairings p1.evs p2.evs)
-  ))
+    ) eqrs
+  ))))
 
 let if_gen cond ps1 ps2 =
   List.flatten ((cross ps1 ps2) |> List.map (fun (p1, p2) -> 
-      List.map (fun eqr ->
+    List.map (fun eqr ->
       let f = eqr_to_mapping eqr in
       let p1 = relabel f p1 in 
       {
@@ -662,13 +730,45 @@ let write_gen vs x mode scope m tid =
 
 let write_filter ps = ps
 
-let rec interp vs tid = function
-  Assign (r, e) -> assign_gen r e
-| Skip -> [empty_pomset]
-| Load (r, x, mode, scope) -> read_gen vs r x mode scope tid
-| LeftPar (p1, tid', p2) -> pomsets_par_gen (interp vs tid p1) (interp vs tid' p2)
-| Store (x, mode, scope, e) -> write_gen vs x mode scope e tid
-| Sequence (p1, p2) -> pomsets_seq_gen (interp vs tid p1) (interp vs tid p2)
-| FenceStmt (mode, scope) -> fence_gen mode scope tid
-| Ite (e, p1, p2) -> if_gen (EqExpr (e, V (Val 0))) (interp vs tid p1) (interp vs tid p2)
-| _ -> raise Not_implemented
+let gen_rf_candidates p =
+  let reads = List.filter (is_read <.> p.lab) p.evs in
+  let writes = List.filter (is_write <.> p.lab) p.evs in
+  let is_some = function None -> false | Some _ -> true in
+  let same_location a b = mem_ref_of a = mem_ref_of b && is_some (mem_ref_of a) in
+  let same_value a b = value_of a = value_of b && is_some (value_of a) in
+  let wr_sloc_sval = List.fold_right (fun r acc ->
+      let sloc_sval_writes = List.filter (fun w -> 
+           (same_location <..> p.lab) r w 
+        && (same_value <..> p.lab) r w) 
+        writes 
+      in
+      (List.map (fun w -> w, r) sloc_sval_writes) :: acc
+    ) reads []
+  in
+  big_union (List.map powerset (BatList.n_cartesian_product wr_sloc_sval))
+
+let rec interp vs tid = 
+  let fences _ _ = false in
+  let filter xs = 
+    List.filter (fun p ->
+      List.exists (fun rf ->
+        (candidate overlaps matches fences rf p) 
+      ) (gen_rf_candidates p)
+    )
+    (big_union (
+      List.fold_right (fun p acc ->
+        let rfs = gen_rf_candidates p in
+        List.map (fun rf -> grow_candidate overlaps matches fences rf p) rfs @ acc
+      ) xs [])
+    )
+  in
+  function
+  Assign (r, e) -> filter @@ assign_gen r e
+| Skip -> filter @@ [empty_pomset]
+| Load (r, x, mode, scope) -> filter @@ read_gen vs r x mode scope tid
+| LeftPar (p1, tid', p2) -> filter @@ pomsets_par_gen (interp vs tid p1) (interp vs tid' p2)
+| Store (x, mode, scope, e) -> filter @@ write_gen vs x mode scope e tid
+| Sequence (p1, p2) -> filter @@ pomsets_seq_gen (interp vs tid p1) (interp vs tid p2)
+| FenceStmt (mode, scope) -> filter @@ fence_gen mode scope tid
+| Ite (e, p1, p2) -> filter @@ if_gen (EqExpr (e, V (Val 0))) (interp vs tid p1) (interp vs tid p2)
+| p -> raise (Invalid_argument (Format.sprintf "`%s' not supported. (Xvy8lB)" (show_grammar p)))

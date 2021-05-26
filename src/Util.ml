@@ -5,6 +5,7 @@ let uncurry f (a, b) = f a b
 let id = fun x -> x
 (* matches type of haskell `.` operator *)
 let (<.>) f g a = f (g a)
+let (<..>) f g a b = f (g a) (g b)
 
 let fresh_id =
   let internal_id = ref 0 in
