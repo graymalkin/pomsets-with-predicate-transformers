@@ -1,0 +1,10 @@
+name=IRIC
+values={0,1}
+%%
+x := 0;
+y := 0;
+r2 := x;
+if (r1 = 1) {
+  y := r2
+} else { skip };
+r2 := 1;

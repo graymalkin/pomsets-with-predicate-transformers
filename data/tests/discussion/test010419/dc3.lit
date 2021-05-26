@@ -1,0 +1,6 @@
+exec={}
+name=DC3
+values={0,1}
+comment "DC3"
+%%
+y := 1

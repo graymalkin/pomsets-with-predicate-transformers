@@ -1,0 +1,7 @@
+name=writeread
+values={0,1}
+comment "context closure proof 1"
+%%
+r1 := x;
+x := 1;
+r1 := x

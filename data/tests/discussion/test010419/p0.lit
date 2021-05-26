@@ -1,0 +1,6 @@
+exec={}
+name=P0
+values={0,1}
+comment "P0"
+%%
+y := 1

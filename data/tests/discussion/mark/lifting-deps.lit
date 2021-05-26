@@ -1,0 +1,9 @@
+name="Lifting dependencies"
+values={0,1}
+%%
+r1 := x;
+y := r1;
+r2 := y;
+if (r2 = 1) {
+  z := 1;
+}

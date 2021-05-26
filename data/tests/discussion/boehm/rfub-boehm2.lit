@@ -1,0 +1,24 @@
+name="Boehm 2"
+values={0,1,42}
+comment "http://altair.cs.oswego.edu/pipermail/memory-model-design/2018-May/000009.html"
+%%
+x := 0;
+y := 0;
+z := 0;
+{{
+  r1 := x;
+  y := r1;
+} ||| {
+  z := 0;
+  r2 := y;
+  if (r2 != 42) {
+    z := 1;
+  } else {
+    z := 0
+  };
+  x := r2
+}} ||| {
+  r3 := z
+}
+%%
+allow (r1 = 42 && r2 = 42 && r3 = 0) [] ""

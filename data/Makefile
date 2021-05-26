@@ -3,7 +3,8 @@ OPTIONS = --tex
 TEX_OPTIONS = --interaction=batchmode
 PREAMBLE = ./latex-template/preamble.tex
 
-PROGRAMS = $(wildcard tests/paper-examples/*.lit)
+PROGRAMS = $(wildcard tests/paper-examples/*.lit) \
+	$(wildcard tests/jctc/*.lit)
 TEX_SOURCES = $(shell echo $(patsubst %.lit,diagrams/%.tex,$(PROGRAMS)) | tr ' ' '\n' | sort -V)
 DIAGRAMS = $(shell echo $(patsubst %.lit,diagrams/%.pdf,$(PROGRAMS)) | tr ' ' '\n' | sort -V)
 
@@ -18,7 +19,7 @@ diagrams/%.tex: %.lit $(TOOL) $(PREAMBLE)
 	@mkdir -p $(dir $@)
 	@cat $(PREAMBLE) > $@
 	$(OCAMLRUNPARAM) $(TOOL) $(OPTIONS) $< >> $@
-	@cd $(dir $@); lualatex $(TEX_OPTIONS) $(notdir $@)
+	@cd $(dir $@); lualatex $(TEX_OPTIONS) $(notdir $@) > /dev/null
 
 clean:
 	rm -rf diagrams/

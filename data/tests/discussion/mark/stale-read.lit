@@ -1,0 +1,12 @@
+name="Stale read"
+values={0,1}
+%%
+{
+  x := 0;
+  r1 := x;
+  r2 := x
+} ||| {
+  x := 1
+}
+%%
+forbid (r1 = 1 && r2 = 0) [] ""

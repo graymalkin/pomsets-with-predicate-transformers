@@ -1,0 +1,12 @@
+name=IRIB
+values={0,1}
+%%
+x := 0;
+y := 0;
+if (r1 = 1) {
+  r2 :=	 x;
+  y := r2
+} else {
+  r2 := x;
+};
+r2 := 1

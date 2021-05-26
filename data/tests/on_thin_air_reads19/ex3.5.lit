@@ -1,0 +1,17 @@
+name = ex3.5
+values = {0,1,2}
+%%
+x := 0;
+y := 0;
+z := 0;
+{ r1 := x;
+  if(r1 < 2) {
+    y := 1
+  }
+  else {skip}
+} ||| {
+  r2 := y;
+  x := r2
+}
+%%
+forbid (r2 = 1) [JR = forbid]

@@ -1,0 +1,14 @@
+name=S
+values={0,1,2}
+%%
+x := 0;
+y := 0;
+{
+  x := 2;
+  y := 1
+} ||| {
+  r1 := y;
+  x := 1
+}
+%%
+allow (r1 = 1) [Power=allow] "We cannot observe co"

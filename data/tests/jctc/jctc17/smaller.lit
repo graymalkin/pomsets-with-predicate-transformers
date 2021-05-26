@@ -1,0 +1,6 @@
+name="Checking upclosure in JCTC17"
+values={0,42}
+%%
+x := 42;
+r1 := x;
+y := r1

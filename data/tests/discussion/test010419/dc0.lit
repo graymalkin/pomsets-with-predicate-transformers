@@ -1,0 +1,18 @@
+exec={}
+name=DC0
+values={0,1}
+comment "DC0"
+%%
+if (r1 = 0) {
+  x := 1;
+  r2 := x;
+  if (r2 = 1) {
+    y := 1
+  } else { skip }
+} else {
+  y := 1;
+  r2 := y;
+  if (r2 = 1) {
+    x := 1
+  } else { skip }
+}

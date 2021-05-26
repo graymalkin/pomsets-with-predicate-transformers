@@ -1,0 +1,15 @@
+name="RRRW elimination"
+values={0,1}
+%%
+r1 := y;
+if(r1 = 0) {
+  r2 := x;
+  if(r2 = 0) {
+    r3 := y;
+    if (r3 = 0) {
+      z := 1
+    } else { skip }
+  } else {
+    z := 1
+  }
+} else { skip }

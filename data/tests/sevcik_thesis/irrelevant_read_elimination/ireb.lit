@@ -1,0 +1,5 @@
+name=IREA
+values={0,1}
+%%
+x := 0;
+r1 := 1;

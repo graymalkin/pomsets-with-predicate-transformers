@@ -1,0 +1,19 @@
+name="JCTC1 with SC Fence"
+values={0,1}
+%%
+x := 0;
+y := 0;
+{
+  r1 := y;
+  if (r1 = 1) {
+    x := 1;
+  } else {
+    fence(sc);
+    x := 1
+  }
+} ||| {
+  r2 := x;
+  y := r2
+}
+%%
+forbid (r1 = 1 && r2 = 1) [] ""

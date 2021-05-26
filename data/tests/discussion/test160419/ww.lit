@@ -1,0 +1,11 @@
+exec={}
+name=SB
+values={0,1}
+comment ""
+%%
+{
+  r1 := x
+} ||| {
+  y := 1
+};
+z := 1

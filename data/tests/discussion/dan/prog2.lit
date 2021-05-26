@@ -1,0 +1,6 @@
+name=writeonly
+values={0,1}
+comment "context closure proof 2"
+%%
+x := 1;
+r1 := x

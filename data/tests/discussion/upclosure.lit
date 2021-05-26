@@ -1,0 +1,19 @@
+name="Anouk up closure"
+values = {0,1}
+comment "Who knows"
+%%
+x := 0;
+y := 0;
+t := 0;
+{{
+  r1 := x;
+  r2 := t;
+  if ((r1 = 0) || (r2 = 1)) {
+    y := 1
+  } else { skip }
+} ||| {
+  r3 := y;
+  x := r3
+}} ||| {
+  t := 1
+}

@@ -1,0 +1,19 @@
+name="LB+ctrl+add"
+values={0,1,2,42,43}
+comment "http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0422r0.html"
+%%
+x := 0;
+y := 0;
+{
+  r1  := x;
+  if (r1 = 42) {
+    y := 42
+  } else {
+    y := r1
+  }
+} ||| {
+  r2 := y;
+  x := r2 + 1
+}
+%%
+forbid (r1 = 43 && r2 = 42) [] ""

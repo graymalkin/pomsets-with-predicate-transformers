@@ -1,0 +1,11 @@
+exec={}
+name=P
+values={0,1}
+comment "P"
+%%
+x := 0;
+r1 := x;
+r2 := x;
+if (r1 = r2) {
+   y := 1
+} else { skip }

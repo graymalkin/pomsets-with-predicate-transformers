@@ -1,0 +1,19 @@
+name="Possible counter example"
+values={0,1,2}
+%%
+x := 0;
+y := 0;
+{{
+  r1 := x;
+  r2 := x;
+  y := r2
+} ||| {
+  r3 := y;
+  if(r3 = 2) {
+    x := 1
+  }
+}} ||| {
+ x := 2
+}
+%%
+forbid (r1 = 1 && r2 = 2 && r3 = 2) [] ""

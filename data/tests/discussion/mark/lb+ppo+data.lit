@@ -1,0 +1,17 @@
+name="LB+ppo_conflict+data"
+values={0,1}
+%%
+//{
+  r1 := x;
+  if (r1 = 0) {
+    y := 0;
+    y := 1
+  } else {
+    y := 1
+  }
+//} ||| {
+//  r2 := y;
+//  x := r2
+//}
+%%
+forbid (r1 = 1) [] ""

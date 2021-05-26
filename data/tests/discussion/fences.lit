@@ -1,0 +1,28 @@
+name = "Mark Fences Example"
+values = {0,1}
+comment "We should forbid"
+%%
+x := 0;
+y := 0;
+u := 0;
+t := 0;
+{{
+  t := 1;
+  r1 := y;
+  if (r1 = 1) {
+    u := 1
+  } else {
+    t := 0
+  }
+} ||| {
+  r2 := u;
+  r3 := t;
+  if (r3 = 1) {
+    x := 1
+  }
+}} ||| {
+  r4 := x;
+  if (r4 = 1) {
+    y := 1
+  }
+}

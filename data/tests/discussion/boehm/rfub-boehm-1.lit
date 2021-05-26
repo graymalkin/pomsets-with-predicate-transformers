@@ -1,0 +1,21 @@
+name = "OOTA Boehm 1"
+values = {0,42}
+comment "We should forbid"
+%%
+x := 0;
+y := 0;
+{{
+  r1 := x;
+  y := r1
+} ||| {
+  r2 := y;
+  x := r2
+}} ||| {
+  r3 := y;
+  if (r3 = 42) {
+    print(42)
+  } else {
+    print(0);
+    y := 42;
+  }
+}

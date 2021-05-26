@@ -1,0 +1,6 @@
+exec={}
+name=SingleWrite
+values={0,1}
+comment "Wx1"
+%%
+x := 1

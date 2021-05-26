@@ -1,0 +1,8 @@
+exec={}
+name=P1
+values={0,1}
+comment "P1"
+%%
+if (r1 = r2) {
+   y := 1
+} else { skip }

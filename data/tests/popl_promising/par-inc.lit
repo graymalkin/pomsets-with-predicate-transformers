@@ -1,0 +1,12 @@
+name="Par-Inc"
+values={0,1,2}
+comment "Section 3: Supporting Atomic Updates; Par-Inc"
+%%
+x := 0;
+{
+  r1 := FADD(x, rlx, rlx, 1)
+} ||| {
+  r2 := FADD(x, rlx, rlx, 1)
+}
+%%
+allow (r1 = 1 || r2 = 1) [Promising=allow]

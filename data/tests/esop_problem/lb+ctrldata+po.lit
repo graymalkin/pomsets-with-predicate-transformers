@@ -1,0 +1,16 @@
+name="LB+ctrldata+po"
+values={0,42}
+%%
+x := 0;
+y := 0;
+{
+  r1 := x;
+  if (r1 = 42) {
+    y := r1
+  }
+} ||| {
+  r2 := y;
+  x := 42
+}
+%%
+allow (r1 = 42 && r2 = 42) [Problem=allow]

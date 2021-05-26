@@ -1,0 +1,10 @@
+exec={}
+name=P3
+values={0,1}
+comment "P3"
+%%
+r1 := x;
+r2 := x;
+if (r1 = r2) {
+   y := 1
+} else { skip }

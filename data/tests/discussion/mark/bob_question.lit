@@ -1,0 +1,23 @@
+name="BOB Race Question"
+values={0,1}
+%%
+{
+r1 := z;
+if(r1 = 1)
+  { r2 := y;
+    if(r2 = 1)
+      { x := 1 }
+    else
+      {
+        fence(sc);
+        x := 1
+      }
+  } else { skip } 
+} ||| {
+r3 := x;
+y := r3;
+fence(sc);
+z := 1;
+}
+%%
+forbid (r1 = 1 && r2 = 1 && r3 = 1) [] ""

@@ -1,0 +1,9 @@
+exec={}
+name=DC2
+values={0,1}
+comment "DC2"
+%%
+r2 := x;
+if (r2 = 1) {
+  y := 1
+} else { skip }

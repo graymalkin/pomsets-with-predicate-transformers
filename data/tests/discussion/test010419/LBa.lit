@@ -1,0 +1,7 @@
+exec={}
+name=LBa
+values={0,1}
+comment "LB Thread A"
+%%
+r1 := x;
+y := 1

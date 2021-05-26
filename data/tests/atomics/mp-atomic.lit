@@ -1,0 +1,15 @@
+name="MP+rel+acq"
+values={0,1}
+%%
+x := 0;
+y := 0;
+{
+  x.store(1, rlx);
+  y.store(1, rel)
+} ||| {
+  r1 := y.load(acq);
+  r2 := x.load(rlx)
+}
+%%
+forbid (r1 = 1 && r2 = 0) [] "relaxed MP execution";
+allow (r1 = 0 && r2 = 0) [] "'normal' MP execution"

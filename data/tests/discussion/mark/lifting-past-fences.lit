@@ -1,0 +1,17 @@
+name="Lifting past fences"
+values={0,1}
+%%
+{
+  r1 := x.load(relaxed);
+  if (r1 = 1) {
+    y := 1;
+  } else {
+    fence(sc);
+    y := 1
+  }
+} ||| {
+  r2 := y;
+  x := r2
+}
+%%
+allow (r1 = 1 && r2 = 1) [] ""

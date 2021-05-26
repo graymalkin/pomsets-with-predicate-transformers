@@ -1,0 +1,5 @@
+lock;
+unlock;
+x := 1;
+r1 := x;
+y := r1
