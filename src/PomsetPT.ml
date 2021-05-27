@@ -413,13 +413,13 @@ let wf_pomset p =
 (* We need to grow a candidate pomset such that with minimal changes to dep, 
    plo, etc. we have a candidate pomset as per definition C below. *)
 let grow_candidate strongly_overlaps strongly_matches strongly_fences rf p =
-  let _strongly_overlaps = strongly_overlaps <..> p.lab in
+  let strongly_overlaps = strongly_overlaps <..> p.lab in
   let strongly_matches = strongly_matches <..> p.lab in
   let strongly_fences = strongly_fences <..> p.lab in
 
   (* d -> e ∈ rf => d -> e ∈ dep *)
-  let c6_expand = { p with dep = p.dep <|> rf; } in
-  
+  let c6_expand = { p with dep = p.dep <|> rf } in
+
   (* if d' <= d -rf-> e, and λ(d') strongly matches λ(e') then d' <= e' *)
   let c7a = List.flatten @@ List.map (fun d' ->
       List.fold_right (fun (d, e) acc ->
@@ -429,44 +429,50 @@ let grow_candidate strongly_overlaps strongly_matches strongly_fences rf p =
       ) rf []
     ) c6_expand.evs
   in
+  Printf.printf "|c7a| = %d\n" (List.length c7a);
 
   let c7b = List.flatten @@ List.map (fun p -> 
       List.fold_right (fun (d, e)  acc->
         if strongly_fences d e 
-        then { p with dep = (d, e) :: p.dep} :: { p with dep = (e, d) :: p.dep} :: acc
+        then { p with dep = (d, e) :: p.dep } :: { p with dep = (e, d) :: p.dep } :: acc
         else acc
       ) (cross p.evs p.evs) []
     ) c7a
   in
+  Printf.printf "|c7b| = %d\n" (List.length c7b);
+
 
   (* d -> e ∈ rf => d -> e ∈ plo *)
-  let c8a = List.map (fun p -> { p with plo = p.plo <|> rf; }) c7b in
-(* 
-  let c8b' = List.flatten @@ List.map (fun p -> 
-      List.fold_right (fun (d, e)  acc->
-        List.map (fun c -> 
-          if blocks c e
-          then (
-            if c = d
-            then { p with dep = (c, e) :: p.dep } :: { p with dep = (c, e) :: p.dep } :: acc
-          )
-          else acc
+  let c8a = List.map (fun p -> { p with plo = p.plo <|> rf }) c7b in
+  Printf.printf "|c8a| = %d\n" (List.length c8a);
+
+  let weak_plo_per_rf = rf |> List.map (fun (w, r) ->
+      (
+        (List.filter (strongly_overlaps w) p.evs) |> List.map (fun c ->
+          (c, w)
         )
-      ) (cross p.evs p.evs) []
+      ) @ (
+        (List.filter (strongly_overlaps r) p.evs) |> List.map (fun c ->
+          (r, c)
+        )
+      )
+    )
+  in
+
+  let weak_plo_per_rf = 
+    List.filter (List.for_all (fun (d, e) -> List.mem (e, d) p.plo ==> (d = e))) weak_plo_per_rf
+  in
+
+  let weak_plo_extensions = BatList.n_cartesian_product weak_plo_per_rf in
+  let c8b = big_union @@ List.map (fun p ->
+      List.map (fun plo_ext ->
+        { p with plo = p.plo <|> plo_ext }
+      ) weak_plo_extensions
     ) c8a
-  in *)
+  in
+  Printf.printf "|c8b| = %d\n" (List.length c8b);
 
-  (* send help *)
-  (* let _c8b = List.flatten @@ List.map (fun p -> 
-    List.fold_right (fun (d, e) acc -> 
-      List.map (fun c -> 
-        if blocks (p.lab c) (p.lab e)
-        then { p with }
-
-      ) p.evs
-     ) rf []
-  ) c8a *)
-  c8a
+  c8b
 
 let candidate strongly_overlaps strongly_matches strongly_fences rf p =
   let strongly_overlaps = strongly_overlaps <..> p.lab in
@@ -755,11 +761,11 @@ let rec interp vs tid =
         (candidate overlaps matches fences rf p) 
       ) (gen_rf_candidates p)
     )
-    (big_union (
-      List.fold_right (fun p acc ->
-        let rfs = gen_rf_candidates p in
-        List.map (fun rf -> grow_candidate overlaps matches fences rf p) rfs @ acc
-      ) xs [])
+    (List.flatten @@ List.flatten (
+      List.map (fun p ->
+        let rfs = gen_rf_candidates p in 
+        List.map (fun rf -> grow_candidate overlaps matches fences rf p) rfs
+      ) xs)
     )
   in
   function
