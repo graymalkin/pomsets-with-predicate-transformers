@@ -54,7 +54,7 @@ let x_is_one_and_y_is_one = And (x_is 1, y_is 1)
                           
 let test_eval_entails_xy_one_is_one _ = assert_equal true (eval_entails x_is_one_and_y_is_one x_is_one)
                                           
-let pomsetpt_suite =
+let pomset_pt_formula_suite =
   "PomsetPT formula operations" >::: [
     "test_convert_dnf (base cases)" >:: test_convert_dnf_simple
   ; "test_convert_dnf (idempotent cases)" >:: test_convert_dnf1
@@ -63,4 +63,22 @@ let pomsetpt_suite =
   ; "test_eval_entails_one_is_one" >:: test_eval_entails_one_is_one
   ; "test_eval_entails_one_or_two_is_one" >:: test_eval_entails_one_or_two_is_one
   ; "test_eval_entails_xy_one_is_one" >:: test_eval_entails_xy_one_is_one
+  ]
+
+let test_empty_is_candidate _ =
+  let fences _ _ = true in
+  assert_equal true (candidate overlaps matches fences [] empty_pomset)
+
+let pomset_pt_candidacy =
+  "PomsetPT Candidate Pomset" >::: [
+    "empty is candidate" >:: test_empty_is_candidate
+  ]
+
+(* [[skip]] = empty *)
+let test_interp_skip _ =
+  assert_equal [empty_pomset] (interp [0;1] (Tid 0) Skip)
+
+let pomset_pt_composiotions =
+  "PomsetPT compositions" >::: [
+    "interpret 'skip'" >:: test_interp_skip
   ]
