@@ -1,8 +1,13 @@
-open Relation
+(**
+  Relation pretty printers. Cannot rely on definitions in 
+*)
+
+(* let empty_set = "\\emptyset" *)
+let empty_set = "\\{\\}"
 
 let pp_set pp_a fmt xs =
   if xs = []
-  then Format.fprintf fmt (* "∅" *) "\\{\\}"
+  then Format.fprintf fmt "%s" empty_set
   else (
     Format.fprintf fmt "\\{";
     let rec inner xs = 

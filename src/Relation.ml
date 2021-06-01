@@ -1,3 +1,7 @@
+(**
+  Relational algebra and set theoretic operations on lists
+ *)
+
 open Util
 
 type 'a set = 'a list
@@ -10,6 +14,8 @@ type ('a, 'b) edge = ('a * 'b)
 
 type ('a, 'b) relation = (('a, 'b) edge) set
 [@@deriving show, eq]
+
+include PPRelation
 
 let union a b =
   let ns = List.filter (fun x -> not(List.mem x a)) b in
@@ -37,6 +43,9 @@ let rec powerset l =
 
 let rm x xs = List.filter ((<>) x) xs
 
+(** For a pair of sets A and B, find all possible ways those sets could overlap.
+  A = {1, 2} B = {3, 4}      pairings A B = {{}, {(1, 3)} {(1,3), (2, 4)}, {(2,3)}, {(2,3), (1,4)}}
+ *)
 let rec pairings a b =
   match a with
     ah :: at -> 
@@ -50,9 +59,11 @@ let rec pairings a b =
 
 let rel_of_set xs = List.map (fun x -> (x, x)) xs
 
+(* ^? operator, defined as (r ⋃ id) *)
 let rel_option d r = rel_of_set d <|> r
 let opt = rel_option
 
+(* ; operator *)
 let rel_sequence r1 r2 =
   List.fold_right (fun (a, b) acc ->
       let succs = List.fold_right (fun (b', c) acc -> if b = b' then c :: acc  else acc) r2 [] in
@@ -60,6 +71,7 @@ let rel_sequence r1 r2 =
     ) r1 []
 let seq = rel_sequence
 
+(* ^{-1} operator *)
 let rel_invert r = List.map (fun (a, b) -> (b, a)) r
 let inv = rel_invert
 
@@ -102,33 +114,34 @@ let total d r =
     ) d
   ) d
 
-let partial_order d r = reflexive d r && antisymmetric r && transitive r
-let total_order d r  = partial_order d r && total d r
+let domain r = List.fold_left (fun acc (a, b) -> a :: b :: acc) [] r
 
-open Graph
-module EventGraph = Imperative.Digraph.Concrete(struct
-  type t = int
-  let compare = Stdlib.compare
+(** Note: this definition extracts the domain from the relation and does not require id inclusion *)
+let partial_order r = reflexive (domain r) r && antisymmetric r && transitive r
+
+let total_order d r  = partial_order r && total d r
+
+module EventGraph = Graph.Imperative.Digraph.Concrete(struct
+  include Int 
   let hash = Hashtbl.hash
-  let equal = (=)
 end)
-module EventGraphBuilder = Builder.I(EventGraph)
-module EventGraphOps = Oper.Make(EventGraphBuilder)
+module EventGraphOps = Graph.Oper.Make(Graph.Builder.I(EventGraph))
+
+let edges_to_graph edges = 
+  let g = EventGraph.create () in
+  let _ = List.rev_map (fun (l, r) -> EventGraph.add_edge g l r) edges in
+  g
+
+let graph_to_edges g = EventGraph.fold_edges (fun l r acc -> (l, r)::acc) g []
 
 let transitive_reduction edges =
-  let g = EventGraph.create () in
-  let _ = List.rev_map (fun (l, r) -> EventGraph.add_edge g l r) edges in
-  let g = EventGraphOps.transitive_reduction g in
-  EventGraph.fold_edges (fun l r acc -> (l, r)::acc) g []
+  edges_to_graph edges |> EventGraphOps.transitive_reduction |> graph_to_edges
 
-let transitive_closure ?reflexive:(refl=false) (edges: (int, int) relation) : (int, int) relation =
-  let g = EventGraph.create () in
-  let _ = List.rev_map (fun (l, r) -> EventGraph.add_edge g l r) edges in
-  let g = EventGraphOps.transitive_closure ~reflexive:refl g in
-  EventGraph.fold_edges (fun l r acc -> ((l: 'a), (r: 'b))::acc) g []
+let transitive_closure ?refl:(r=false) edges =
+  edges_to_graph edges |> EventGraphOps.transitive_closure ~reflexive:r |> graph_to_edges
 
-let tc r = transitive_closure ~reflexive:false r
-let rtc d r = transitive_closure ~reflexive:true r <|> rel_of_set d
+let tc r = transitive_closure ~refl:false r
+let rtc d r = transitive_closure ~refl:true r <|> rel_of_set d
 
 let irreflexive r = not (List.exists (fun (a, b) -> a = b) r)
 let acyclic r = irreflexive (tc r)

@@ -1,3 +1,7 @@
+(**
+  AST for .lit files. This is the target data structure of Parse.mly
+ *)
+
 type register = string [@@deriving show, eq]
 let pp_register fmt = Format.fprintf fmt "%s"
 type global = string [@@deriving show, eq]

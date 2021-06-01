@@ -1,3 +1,7 @@
+(**
+  Record for the run config. This is filled in from the .lit file by the parser.
+ *)
+
 open AST
 open Relation
 
