@@ -23,6 +23,8 @@ let pp_set pp_a fmt xs =
     Format.fprintf fmt "\\}"
   )
 
+let pp_int fmt = Format.fprintf fmt "%d"
+
 let pp_edge pp_a pp_b fmt (a, b) = Format.fprintf fmt "(%a, %a)" pp_a a pp_b b
 
 let pp_relation pp_a pp_b fmt xs = pp_set (pp_edge pp_a pp_b) fmt xs

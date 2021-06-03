@@ -583,7 +583,7 @@ let pomsets_seq_gen ps1 ps2 =
       (* Note: this is an over-approximation of the read sets. If we could inspect the predicate
       transformers then we could generate a precise set of reads which could "interfere" with c in
       the definition of down. *)
-      let read_sets = powerset ((List.filter (is_read <.> p1.lab) p1.evs) <|> (List.filter (is_read <.> p2.lab) p2.evs)) in
+      let read_sets = powerset (List.filter (is_read <.> lab_new) (p1.evs <|> p2.evs)) in
 
       (* The overlap of E1 and E2 must satisfy some compatibility predicate *)
       (* TODO: is this choice of predicate actually correct? It has bad code-smell *)
@@ -643,7 +643,6 @@ let pomsets_seq_gen ps1 ps2 =
                 sync = p1.sync <|> p2.sync;                                 (* S7  *)
                 plo = p1.plo <|> p2.plo;                                    (* S8  *)
                 rmw = p1.rmw <|> p2.plo                                     (* S9  *)
-
               }
             )
           )
