@@ -117,10 +117,12 @@ let total d r =
     ) d
   ) d
 
-let domain r = List.fold_left (fun acc (a, b) -> a :: b :: acc) [] r
+let domain r = List.fold_left (fun acc (a, _) -> a :: acc) [] r
+let codomain r = List.fold_left (fun acc (_, b) -> b :: acc) [] r
+let field r = domain r <|> codomain r
 
-(** Note: this definition extracts the domain from the relation and does not require id inclusion *)
-let partial_order r = reflexive (domain r) r && antisymmetric r && transitive r
+(** Note: this definition extracts the field from the relation and does not require id inclusion *)
+let partial_order r = reflexive (field r) r && antisymmetric r && transitive r
 
 let total_order d r  = partial_order r && total d r
 
