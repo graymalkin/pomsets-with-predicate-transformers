@@ -31,6 +31,11 @@ let default d = function
   None -> d
 | Some s -> s
 
+let map_default d f xs = 
+  if xs = [] 
+  then d
+  else List.map f xs
+
 (* Boolean logic utility *)
 let implies p q = if p then q else true
 let (==>) = implies

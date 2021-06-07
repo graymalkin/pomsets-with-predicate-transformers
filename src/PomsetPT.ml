@@ -432,7 +432,8 @@ let grow_candidate strongly_overlaps strongly_matches strongly_fences rf p =
   let c6_expand = { p with dep = p.dep <|> rf } in
 
   (* if d' <= d -rf-> e, and λ(d') strongly matches λ(e') then d' <= e' *)
-  let c7a = List.flatten @@ List.map (fun d' ->
+  let c7a = 
+    List.flatten @@ map_default [[c6_expand]] (fun d' ->
       List.fold_right (fun (d, e) acc ->
         if List.mem (d', d) c6_expand.dep && strongly_matches d e 
         then { c6_expand with dep = (d, e) :: c6_expand.dep } :: acc
@@ -442,12 +443,15 @@ let grow_candidate strongly_overlaps strongly_matches strongly_fences rf p =
   in
   debug "|c7a| = %d\n" (List.length c7a);
 
-  let c7b = List.flatten @@ List.map (fun p -> 
-      List.fold_right (fun (d, e)  acc->
-        if strongly_fences d e 
-        then { p with dep = (d, e) :: p.dep } :: { p with dep = (e, d) :: p.dep } :: acc
-        else acc
-      ) (cross p.evs p.evs) []
+  let c7b = List.flatten @@ 
+    List.map (fun p -> 
+      if p.evs <> []
+      then List.fold_right (fun (d, e) acc ->
+          if strongly_fences d e 
+          then { p with dep = (d, e) :: p.dep } :: { p with dep = (e, d) :: p.dep } :: acc
+          else acc
+        ) (cross p.evs p.evs) []
+      else [p]
     ) c7a
   in
   debug "|c7b| = %d\n" (List.length c7b);
@@ -778,28 +782,32 @@ let gen_rf_candidates p =
   in
   big_union (List.map powerset (BatList.n_cartesian_product wr_sloc_sval))
 
-let rec interp vs tid = 
+let grow_and_filter ps =
   let fences _ _ = false in
-  let filter xs = 
-    List.filter (fun p ->
-      List.exists (fun rf ->
-        (candidate overlaps matches fences rf p) 
-      ) (gen_rf_candidates p)
-    )
-    (List.flatten @@ List.flatten (
-      List.map (fun p ->
-        let rfs = gen_rf_candidates p in 
-        List.map (fun rf -> grow_candidate overlaps matches fences rf p) rfs
-      ) xs)
-    )
+  List.filter (fun p ->
+    List.exists (fun rf ->
+      (candidate overlaps matches fences rf p) 
+    ) (gen_rf_candidates p)
+  )
+  (List.flatten @@ List.flatten (
+    List.map (fun p ->
+      let rfs = gen_rf_candidates p in 
+      List.map (fun rf -> grow_candidate overlaps matches fences rf p) rfs
+    ) ps)
+  )
+
+let interp vs tid = 
+  (** TODO: This filter can't work, it looks for completed pomsets, which doesn't work in the case of interpretting just a load, for example. No rf can be built so the pomset is immediately discarded. *)
+  let rec go tid = function
+    Assign (r, e) -> assign_gen r e
+  | Skip -> [empty_pomset]
+  | Load (r, x, mode, scope) -> read_gen vs r x mode scope tid
+  | LeftPar (p1, tid', p2) -> pomsets_par_gen (go tid p1) (go tid' p2)
+  | Store (x, mode, scope, e) -> write_gen vs x mode scope e tid
+  | Sequence (p1, p2) -> pomsets_seq_gen (go tid p1) (go tid p2)
+  | FenceStmt (mode, scope) -> fence_gen mode scope tid
+  | Ite (e, p1, p2) -> if_gen (EqExpr (e, V (Val 0))) (go tid p1) (go tid p2)
+  | p -> raise (Invalid_argument (Format.sprintf "`%s' not supported. (Xvy8lB)" (show_grammar p)))
   in
-  function
-  Assign (r, e) -> filter @@ assign_gen r e
-| Skip -> filter @@ [empty_pomset]
-| Load (r, x, mode, scope) -> filter @@ read_gen vs r x mode scope tid
-| LeftPar (p1, tid', p2) -> filter @@ pomsets_par_gen (interp vs tid p1) (interp vs tid' p2)
-| Store (x, mode, scope, e) -> filter @@ write_gen vs x mode scope e tid
-| Sequence (p1, p2) -> filter @@ pomsets_seq_gen (interp vs tid p1) (interp vs tid p2)
-| FenceStmt (mode, scope) -> filter @@ fence_gen mode scope tid
-| Ite (e, p1, p2) -> filter @@ if_gen (EqExpr (e, V (Val 0))) (interp vs tid p1) (interp vs tid p2)
-| p -> raise (Invalid_argument (Format.sprintf "`%s' not supported. (Xvy8lB)" (show_grammar p)))
+  grow_and_filter <.> go tid
+  

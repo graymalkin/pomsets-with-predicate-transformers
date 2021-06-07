@@ -1,6 +1,8 @@
 open OUnit2
 
 open PomsetPT
+open Relation
+open Util
 
 let p = Symbol Write_sym
 let q = Symbol Write_sym
@@ -65,20 +67,111 @@ let pomset_pt_formula_suite =
   ; "test_eval_entails_xy_one_is_one" >:: test_eval_entails_xy_one_is_one
   ]
 
+let test_gen_rf_candidates_empty _ =
+  assert_equal [[]] (gen_rf_candidates empty_pomset)
+
+let test_gen_rf_one_edge _ =
+  let p = {
+      empty_pomset with
+      evs = [1;2];
+      lab = empty_pomset.lab |> 
+        Util.bind 1 (Read (Tid 0, Rlx, Sys, Ref "x", Val 0)) |>
+        Util.bind 2 (Write (Tid 0, Rlx, Sys, Ref "x", Val 0));
+    }
+  in
+  let rfs = (gen_rf_candidates p) in
+  assert_bool "cannot find empty rf" (List.mem [] rfs);
+  assert_bool "bad edge in rf" (not @@ List.exists (fun rf ->
+    List.mem (1,2) rf || List.mem (1,1) rf || List.mem (2,2) rf
+  ) rfs);
+  assert_bool "cannot find expected rf" (List.exists (fun rf ->
+    List.mem (2,1) rf
+  ) rfs) 
+
+let test_gen_rf_choice _ =
+  let p = {
+      empty_pomset with
+      evs = [1;2;3];
+      lab = empty_pomset.lab |> 
+           Util.bind 1 (Read (Tid 0, Rlx, Sys, Ref "x", Val 0))
+        |> Util.bind 2 (Write (Tid 0, Rlx, Sys, Ref "x", Val 0))
+        |> Util.bind 3 (Write (Tid 0, Rlx, Sys, Ref "x", Val 0));
+    }
+  in
+  let rfs = (gen_rf_candidates p) in
+  assert_bool "cannot find empty rf" (List.mem [] rfs);
+  assert_bool "bad edge in rf" (not @@ List.exists (fun rf ->
+       List.mem (1,2) rf || List.mem (1,3) rf (* read-write edges *)
+    || List.mem (1,1) rf || List.mem (2,2) rf || List.mem (3,3) rf  (* refl edges *)
+    || List.mem (2,3) rf || List.mem (3,2) rf (* write-write edges *)
+  ) rfs);
+  assert_bool "cannot find expected rf" (List.exists (fun rf ->
+    List.mem (2,1) rf
+  ) rfs);
+  assert_bool "cannot find expected rf" (List.exists (fun rf ->
+    List.mem (3,1) rf
+  ) rfs) 
+
+let pomset_pt_utility_definitions = 
+  "PomsetPT Utility Definitions" >::: [
+    "empty pomset generates empty rf" >:: test_gen_rf_candidates_empty
+  ; "generate trivial rf" >:: test_gen_rf_one_edge
+  ; "generate multiple choices of rf" >:: test_gen_rf_choice
+  ]
+
+let eq_pomset p1 p2 =
+    equal_set (=) p1.evs p2.evs
+  && List.for_all (fun e1 -> p1.lab e1 = p2.lab e1) p1.evs
+  && List.for_all (fun e1 -> p1.pre e1 = p2.pre e1) p1.evs
+  && p1.term = p2.term
+  && equal_relation (=) (=) p1.dep p2.dep
+  && equal_relation (=) (=) p1.sync p2.sync
+  && equal_relation (=) (=) p1.plo p2.plo
+  && equal_relation (=) (=) p1.rmw p2.rmw
+
 let test_empty_is_candidate _ =
   let fences _ _ = true in
   assert_equal true (candidate overlaps matches fences [] empty_pomset)
 
+let test_grow_candidate_empty _ =
+  let fences _ _ = false in
+  assert_bool "not equal" (
+    (grow_candidate overlaps matches fences [] empty_pomset) |> List.for_all (fun p ->
+      eq_pomset p empty_pomset
+    )
+  )
+
 let pomset_pt_candidacy =
   "PomsetPT Candidate Pomset" >::: [
     "empty is candidate" >:: test_empty_is_candidate
+  ; "grow empty pomset generates empty pomset" >:: test_grow_candidate_empty
   ]
 
 (* [[skip]] = empty *)
 let test_interp_skip _ =
-  assert_equal [empty_pomset] (interp [0;1] (Tid 0) Skip)
+  assert_bool "not equal" (
+    (interp [0;1] (Tid 0) Skip) |> List.for_all (fun p ->
+      eq_pomset p empty_pomset
+    )
+  )
+
+(* [[x := 1; r1 := x]] contains a pomset with a read event *)
+let test_singleton_read _ =
+  assert_bool "cannot find pomset with read" (
+    (interp [0;1] (Tid 0) (
+      Sequence (
+        Sequence (
+          Store (Ref "x", Rlx, Sys, V (Val 0)),
+          Load (Reg "1", Ref "x", Rlx, Sys)
+        ), Skip)
+      )
+    ) |> List.exists (fun p ->
+      List.exists (is_read <.> p.lab) p.evs
+    )
+  )
 
 let pomset_pt_composiotions =
   "PomsetPT compositions" >::: [
     "interpret 'skip'" >:: test_interp_skip
+  ; "single load" >:: test_singleton_read
   ]
