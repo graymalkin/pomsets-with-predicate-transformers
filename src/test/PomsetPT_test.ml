@@ -131,27 +131,34 @@ let eq_pomset p1 p2 =
 
 let test_empty_is_candidate _ =
   let fences _ _ = true in
-  assert_equal true (candidate overlaps matches fences [] empty_pomset)
+  assert_equal true (candidate overlaps matches fences empty_pomset [])
 
 let test_grow_candidate_empty _ =
   let fences _ _ = false in
-  assert_bool "not equal" (
-    (grow_candidate overlaps matches fences [] empty_pomset) |> List.for_all (fun p ->
-      eq_pomset p empty_pomset
-    )
+  assert_equal ~cmp:(equal_set eq_pomset) [empty_pomset] (
+    grow_candidate overlaps matches fences empty_pomset []
   )
+
+let test_grow_and_filter_empty _ =
+  assert_equal ~cmp:(equal_set eq_pomset) [empty_pomset] (grow_and_filter [empty_pomset])
+
 
 let pomset_pt_candidacy =
   "PomsetPT Candidate Pomset" >::: [
     "empty is candidate" >:: test_empty_is_candidate
+  ; "grow and filter empty" >:: test_grow_and_filter_empty
   ; "grow empty pomset generates empty pomset" >:: test_grow_candidate_empty
   ]
 
 (* [[skip]] = empty *)
 let test_interp_skip _ =
-  assert_bool "not equal" (
-    (interp [0;1] (Tid 0) Skip) |> List.for_all (fun p ->
-      eq_pomset p empty_pomset
+  assert_equal ~cmp:(equal_set eq_pomset) [empty_pomset] (interp [0;1] (Tid 0) Skip) 
+
+let test_singleton_write _ =
+  assert_bool "cannot find pomset with write" (
+    (interp [0;1] (Tid 0) (Store (Ref "x", Rlx, Sys, V (Val 0))))
+    |> List.exists (fun p ->
+      List.exists (is_write <.> p.lab) p.evs
     )
   )
 
@@ -173,5 +180,6 @@ let test_singleton_read _ =
 let pomset_pt_composiotions =
   "PomsetPT compositions" >::: [
     "interpret 'skip'" >:: test_interp_skip
+  ; "single write" >:: test_singleton_write
   ; "single load" >:: test_singleton_read
   ]

@@ -17,10 +17,13 @@ type ('a, 'b) relation = (('a, 'b) edge) set
 
 include PPRelation
 
+
 let union a b =
   let ns = List.filter (fun x -> not(List.mem x a)) b in
   a @ ns
 let (<|>) = union
+
+let set_of_list xs = List.fold_right (fun x acc -> [x] <|> acc) xs []
 
 let big_union ss = List.fold_left (<|>) [] ss
 
