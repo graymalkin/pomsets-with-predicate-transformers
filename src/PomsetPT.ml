@@ -8,6 +8,9 @@
 open Relation
 open Util
 
+(** TODO *)
+let satisfiable _ = true
+
 (** Preliminaries *)
 type value = Val of int [@@deriving show]
 type register = Reg of string [@@deriving show]
@@ -17,10 +20,11 @@ type expr =
 | Eq of expr * expr
 [@@deriving show]
 type thread_id = Tid of int [@@deriving show]
+let top_level_tid = Tid 0
 type mem_ref = Ref of string [@@deriving show]
 
 type mode = Wk | Rlx | Acq | Rel | RA | SC [@@deriving show]
-type scope = Grp | Proc | Sys [@@deriving show]
+type scope = CTA | GPU | Sys [@@deriving show]
 
 let fresh_register =
   let reg_id = ref 0 in
@@ -297,8 +301,8 @@ let strongly_overlaps eq_grp eq_proc a b =
     tid_of a = tid_of b
     || (
       mode_of a <> Wk && mode_of b <> Wk   (* 2a *)
-      && (scope_of a = Grp || scope_of b = Grp) ==> eq_grp a b (* 2b *)
-      && (scope_of a = Proc || scope_of b = Proc) ==> eq_proc a b (* 2c *)
+      && (scope_of a = GPU || scope_of b = GPU) ==> eq_grp a b (* 2b *)
+      && (scope_of a = CTA || scope_of b = CTA) ==> eq_proc a b (* 2c *)
     )
   )
 
@@ -308,8 +312,8 @@ let strongly_fences eq_grp eq_proc a b =
     tid_of a = tid_of b
     || (
       mode_of a <> Wk && mode_of b <> Wk   (* 2a *)
-      && (scope_of a = Grp || scope_of b = Grp) ==> eq_grp a b (* 2b *)
-      && (scope_of a = Proc || scope_of b = Proc) ==> eq_proc a b (* 2c *)
+      && (scope_of a = GPU || scope_of b = GPU) ==> eq_grp a b (* 2b *)
+      && (scope_of a = CTA || scope_of b = CTA) ==> eq_proc a b (* 2c *)
     )
   | _ -> false
 
@@ -368,14 +372,16 @@ let empty_pomset = {
 let wf_lab p = complete p.evs p.lab 
 
 (* M3 *)
-let wf_pre p = complete p.evs p.pre
+let wf_pre p = 
+     complete p.evs p.pre
+  && List.for_all (satisfiable <.> p.pre) p.evs                     (** M3a *)
 
 (* M4 *)
 (* Note: this is impractical to express, it requires quantifying all possible
    formulae *)
 let wf_pt _p = true
 
-let wf_term p = eval_entails (p.pt p.evs (True)) p.term
+let wf_term p = eval_entails p.term (p.pt p.evs (True))
 
 (* M6 *)
 let wf_dep p = partial_order p.dep
@@ -423,7 +429,7 @@ let wf_pomset p =
 
 (* We need to grow a candidate pomset such that with minimal changes to dep, 
    plo, etc. we have a candidate pomset as per definition C below. *)
-let grow_candidate strongly_overlaps strongly_matches strongly_fences rf p =
+let grow_candidate strongly_overlaps strongly_matches strongly_fences p rf =
   let strongly_overlaps = strongly_overlaps <..> p.lab in
   let strongly_matches = strongly_matches <..> p.lab in
   let strongly_fences = strongly_fences <..> p.lab in
@@ -489,7 +495,7 @@ let grow_candidate strongly_overlaps strongly_matches strongly_fences rf p =
 
   c8b
 
-let candidate strongly_overlaps strongly_matches strongly_fences rf p =
+let candidate strongly_overlaps strongly_matches strongly_fences p rf =
   let strongly_overlaps = strongly_overlaps <..> p.lab in
   let strongly_matches = strongly_matches <..> p.lab in
   let strongly_fences = strongly_fences <..> p.lab in
@@ -521,8 +527,8 @@ let candidate strongly_overlaps strongly_matches strongly_fences rf p =
     ) p.evs (* C8b *)
   ) rf
 
-let top_level strongly_overlaps strongly_matches strongly_fences rf p =
-  candidate strongly_overlaps strongly_matches strongly_fences rf p
+let top_level strongly_overlaps strongly_matches strongly_fences p rf =
+  candidate strongly_overlaps strongly_matches strongly_fences p rf
   && List.for_all (fun e ->
       (is_read (p.lab e) ==> List.exists (fun d -> List.mem (d, e) rf) p.evs) (* T2 *)
       && eval_formula (p.pre e) (* T3 *)
@@ -622,6 +628,16 @@ let pomsets_seq_gen ps1 ps2 =
               in
               (* eqr is used to map ids from p1 into ids to p2 to generate merge opportunities *)
               let p1 = relabel f p1 in 
+              let s7a = List.filter (fun (d, e) -> 
+                     synchronisation_delays (p1.lab d) (p2.lab e) 
+                  && satisfiable (And (p1.pre d, p2.pre e))
+                ) (cross p1.evs p2.evs) 
+              in
+              let s8a = List.filter (fun (d, e) -> 
+                     coherence_delays (p1.lab d) (p2.lab e) 
+                  && satisfiable (And (p1.pre d, p2.pre e))
+                ) (cross p1.evs p2.evs) 
+              in
               {
                 evs = p1.evs <|> p2.evs;
                 lab = lab_new;                                              (* S2  *)
@@ -629,11 +645,11 @@ let pomsets_seq_gen ps1 ps2 =
                 pre = (fun e ->
                   let pre1 = 
                     if List.mem e p1.evs && List.mem e p2.evs
-                    then Or (p1.pre e, k2' e)                               (* S3c  *)
+                    then And (Or (p1.pre e, k2' e), p1.term)                (* S3c  *)
                     else (
                       if List.mem e (p1.evs <-> p2.evs)
                       then p1.pre e                                         (* S3a *)
-                      else p2.pre e                                         (* S3b *)
+                      else And (p2.pre e, p1.term)                          (* S3b *)
                     )
                   in
                   if is_release (p2.lab e)
@@ -642,10 +658,11 @@ let pomsets_seq_gen ps1 ps2 =
                 );
 
                 pt = (fun d f -> p1.pt d (p2.pt d f));                      (* S4  *)
+                (** TODO: Is this the correct index for the predicate transformer? *)
                 term = And (p1.term, p1.pt p1.evs p2.term);                 (* S5  *)
                 dep = p1.dep <|> p2.dep <|> du;                             (* S6  *)
-                sync = p1.sync <|> p2.sync;                                 (* S7  *)
-                plo = p1.plo <|> p2.plo;                                    (* S8  *)
+                sync = p1.sync <|> p2.sync <|> s7a;                         (* S7,S7a *)
+                plo = p1.plo <|> p2.plo <|> s8a;                            (* S8,S8a *)
                 rmw = p1.rmw <|> p2.plo                                     (* S9  *)
               }
             )
@@ -710,9 +727,11 @@ let fence_gen mode scope tid =
       empty_pomset with
       evs = [id];                                                   (* F1  *)
       lab = bind id (Fence (tid, mode, scope)) empty_env;           (* F2  *)
+      pre = bind id True empty_env;                                 (* F3  *)
       pt = (fun _d f -> f);                                         (* F4  *)
+      term = True;                                                  (* F5a *)
     }
-  ] <|> [{empty_pomset with term = False}]                          (* F5  *)
+  ] <|> [{empty_pomset with term = False}]                          (* F5b *)
 
 let fence_filter ps = ps
 
@@ -725,6 +744,7 @@ let read_gen vs r x mode scope tid =
       empty_pomset with
       evs = [id];                                                   (* R1  *)
       lab = bind id (Read (tid, mode, scope, x, v)) empty_env;      (* R2  *)
+      pre = (fun _ -> True);                                        (* R3  *)
       pt = (fun d f ->
         if List.mem id d (* E n D <> empty *)
         then Implies (EqExpr (V v, R se), rename_reg se r f)        (* R4a *)
@@ -732,12 +752,14 @@ let read_gen vs r x mode scope tid =
             Or (EqExpr (V v, R se), EqVar (x, R se)), 
             rename_reg se r f
           )
-      )
+      );
+      term = True;                                                  (* R5a *)
     }
   ) <|> [
     { 
       empty_pomset with
-      term = if mode_order mode Acq then False else True;           (* R5  *)
+      term = if mode_order mode Acq then False else True;           (* R5b *)
+      (* R4c does not need to be implemented, as we do not re-use registers. *)
     }
   ]
 
@@ -784,20 +806,21 @@ let gen_rf_candidates p =
 
 let grow_and_filter ps =
   let fences _ _ = false in
-  List.filter (fun p ->
-    List.exists (fun rf ->
-      (candidate overlaps matches fences rf p) 
-    ) (gen_rf_candidates p)
-  )
-  (List.flatten @@ List.flatten (
-    List.map (fun p ->
-      let rfs = gen_rf_candidates p in 
-      List.map (fun rf -> grow_candidate overlaps matches fences rf p) rfs
-    ) ps)
+  let grow = 
+    List.flatten @@ List.flatten (
+      ps |> List.map (fun p ->
+        gen_rf_candidates p |>List.map (grow_candidate overlaps matches fences p)
+      )
+    )
+  in
+  grow |> List.filter (fun _p ->
+    (* List.exists (candidate overlaps matches fences p) (gen_rf_candidates p) *)
+    true
   )
 
+(* Is it important to reject non-pomsets (according to M1-9) at each interpretation step, or can it 
+   all be done at the end, as we currently do here? *)
 let interp vs tid = 
-  (** TODO: This filter can't work, it looks for completed pomsets, which doesn't work in the case of interpretting just a load, for example. No rf can be built so the pomset is immediately discarded. *)
   let rec go tid = function
     Assign (r, e) -> assign_gen r e
   | Skip -> [empty_pomset]
@@ -810,4 +833,3 @@ let interp vs tid =
   | p -> raise (Invalid_argument (Format.sprintf "`%s' not supported. (Xvy8lB)" (show_grammar p)))
   in
   grow_and_filter <.> go tid
-  
