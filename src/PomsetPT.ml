@@ -355,6 +355,17 @@ type pomsetPT = {
   rmw:  (event, event) relation                                     (* M9  *)
 }
 
+let eq_pomset p1 p2 =
+  (* Strategically ordered to hopefully reduce exec time *)
+    equal_set (=) p1.evs p2.evs
+  && p1.term = p2.term
+  && equal_relation (=) (=) p1.dep p2.dep
+  && equal_relation (=) (=) p1.sync p2.sync
+  && equal_relation (=) (=) p1.plo p2.plo
+  && equal_relation (=) (=) p1.rmw p2.rmw
+  && List.for_all (fun e1 -> p1.lab e1 = p2.lab e1) p1.evs
+  && List.for_all (fun e1 -> p1.pre e1 = p2.pre e1) p1.evs
+
 let empty_pomset = { 
   evs = [];
   lab = empty_env;
@@ -438,11 +449,11 @@ let grow_candidate strongly_overlaps strongly_matches strongly_fences p rf =
 
   (* if d' <= d -rf-> e, and λ(d') strongly matches λ(e') then d' <= e' *)
   let c7a = map_default [c6_expand] (fun d' ->
-      let new_dep_edges = List.fold_right (fun (d, e) acc ->
+      let new_dep_edges = List.fold_left (fun acc (d, e) ->
           if List.mem (d', d) c6_expand.dep && strongly_matches d e 
           then (d, e) :: acc
           else acc
-        ) rf []
+        ) [] rf
       in
       { c6_expand with dep = c6_expand.dep <|> new_dep_edges }
     ) c6_expand.evs
@@ -450,11 +461,11 @@ let grow_candidate strongly_overlaps strongly_matches strongly_fences p rf =
   debug "|c7a| = %d\n" (List.length c7a);
 
   let c7b = List.flatten @@ (c7a |> List.map (fun p ->
-      let sync_choices = List.fold_right (fun (d, e) acc -> 
+      let sync_choices = List.fold_left (fun acc (d, e) -> 
           if strongly_matches d e
           then [(d, e); (e, d)] :: acc
           else acc
-        ) (cross p.evs p.evs) []
+        ) [] (cross p.evs p.evs)
       in
       map_default [p] (fun sync_ext -> { p with sync = p.sync <|> sync_ext }) (BatList.n_cartesian_product sync_choices)
     ))
@@ -791,14 +802,14 @@ let gen_rf_candidates p =
   let is_some = function None -> false | Some _ -> true in
   let same_location a b = mem_ref_of a = mem_ref_of b && is_some (mem_ref_of a) in
   let same_value a b = value_of a = value_of b && is_some (value_of a) in
-  let wr_sloc_sval = List.fold_right (fun r acc ->
+  let wr_sloc_sval = List.fold_left (fun acc r ->
       let sloc_sval_writes = List.filter (fun w -> 
            (same_location <..> p.lab) r w 
         && (same_value <..> p.lab) r w) 
         writes 
       in
       (List.map (fun w -> w, r) sloc_sval_writes) :: acc
-    ) reads []
+    ) [] reads
   in
   big_union (List.map powerset (BatList.n_cartesian_product wr_sloc_sval))
 
@@ -811,10 +822,20 @@ let grow_and_filter ps =
       )
     )
   in
-  grow |> List.filter (fun _p ->
+
+  let pomsets_dedup xs = 
+    List.fold_left (fun acc x ->
+      if List.exists (eq_pomset x) acc
+      then acc
+      else x :: acc
+    ) [] xs
+  in
+
+  (pomsets_dedup grow) 
+  (* |> List.filter (fun _p ->
     (* List.exists (candidate overlaps matches fences p) (gen_rf_candidates p) *)
     true
-  )
+  ) *)
 
 (* Is it important to reject non-pomsets (according to M1-9) at each interpretation step, or can it 
    all be done at the end, as we currently do here? *)

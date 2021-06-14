@@ -119,16 +119,6 @@ let pomset_pt_utility_definitions =
   ; "generate multiple choices of rf" >:: test_gen_rf_choice
   ]
 
-let eq_pomset p1 p2 =
-    equal_set (=) p1.evs p2.evs
-  && List.for_all (fun e1 -> p1.lab e1 = p2.lab e1) p1.evs
-  && List.for_all (fun e1 -> p1.pre e1 = p2.pre e1) p1.evs
-  && p1.term = p2.term
-  && equal_relation (=) (=) p1.dep p2.dep
-  && equal_relation (=) (=) p1.sync p2.sync
-  && equal_relation (=) (=) p1.plo p2.plo
-  && equal_relation (=) (=) p1.rmw p2.rmw
-
 let test_empty_is_candidate _ =
   let fences _ _ = true in
   assert_equal true (candidate overlaps matches fences empty_pomset [])
