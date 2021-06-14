@@ -19,6 +19,11 @@ let pomsetpt (config, ast, _outcomes) =
   then Printf.printf "Execution time: %fs\n" (Sys.time ());
   ()
 
+let check_outcomes p = function
+  AST.Allowed (bexpr, expcts, comment) ->
+  ()
+  | _ -> raise Util.Not_implemented
+
 let run_f f = pomsetpt (Parse.parse_file f)
 
 let run_s s = pomsetpt (Parse.parse_string s)
