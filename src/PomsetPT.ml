@@ -5,6 +5,7 @@
   Definitions are approximately in the order introduced from the paper.
  *)
 
+open ConcurrentMap
 open Relation
 open Util
 
@@ -442,7 +443,7 @@ let wf_pomset p =
 let grow_candidate strongly_overlaps strongly_matches strongly_fences p rf =
   let strongly_overlaps = strongly_overlaps <..> p.lab in
   let strongly_matches = strongly_matches <..> p.lab in
-  let strongly_fences = strongly_fences <..> p.lab in
+  let _strongly_fences = strongly_fences <..> p.lab in
 
   (* d -> e ∈ rf => d -> e ∈ dep *)
   let c6_expand = { p with dep = p.dep <|> rf } in
@@ -818,7 +819,7 @@ let grow_and_filter ps =
   let grow = 
     List.flatten @@ List.flatten (
       ps |> List.map (fun p ->
-        gen_rf_candidates p |>List.map (grow_candidate overlaps matches fences p)
+        gen_rf_candidates p |> cmap (grow_candidate overlaps matches fences p)
       )
     )
   in
