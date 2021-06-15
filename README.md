@@ -7,13 +7,14 @@ This tool has been built against OCaml 4.10.0, other versions of OCaml will prob
 
 You will need some libraries:
 
-```
-opam install dune batteries fmt ocamlgraph ounit2
+```bash
+opam install dune batteries fmt menhir ocamlgraph ounit2 ppx_deriving
+opam install merlin utop ocp-indent # nice to have
 ```
 
 Then you can build this tool using `dune`.
 
-```
+```bash
 dune build
 dune runtest
 ```
