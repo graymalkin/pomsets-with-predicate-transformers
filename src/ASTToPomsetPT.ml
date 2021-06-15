@@ -6,7 +6,11 @@ let convert_expr = function
 (* TODO: this is probably too limitted even for MVP *)
 let convert_bexpr = function
   AST.Equality (e1, e2) -> PomsetPT.Eq (convert_expr e1, convert_expr e2)
-| _ -> raise (Invalid_argument "only equality to 0 supported in boolean expressions (2Yk1PK)")
+| AST.Gt (e1, e2) -> PomsetPT.Gt (convert_expr e1, convert_expr e2)
+| AST.Gte (e1, e2) -> PomsetPT.Gte (convert_expr e1, convert_expr e2)
+| AST.Lt (e1, e2) -> PomsetPT.Lt (convert_expr e1, convert_expr e2)
+| AST.Lte (e1, e2) -> PomsetPT.Lte (convert_expr e1, convert_expr e2)
+| _ -> raise (Invalid_argument "binary expression not supported by PomsetPT (2Yk1PK)")
 
 let convert_access_ordering = function
   AST.Relaxed -> PomsetPT.Rlx
