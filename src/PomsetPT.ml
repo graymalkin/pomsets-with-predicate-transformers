@@ -8,12 +8,13 @@
 open Relation
 open Util
 
-(** TODO *)
-let satisfiable _ = true
-
 (** Preliminaries *)
-type value = Val of int [@@deriving show { with_path = false }]
-type register = Reg of string [@@deriving show { with_path = false }]
+type value = Val of int
+[@@deriving show { with_path = false }]
+
+type register = Reg of string 
+[@@deriving show { with_path = false }]
+
 type expr = 
   V of value
 | R of register
@@ -23,12 +24,15 @@ type expr =
 | Lt of expr * expr
 | Lte of expr * expr
 [@@deriving show { with_path = false }]
-type thread_id = Tid of int [@@deriving show { with_path = false }]
-let top_level_tid = Tid 0
-type mem_ref = Ref of string [@@deriving show { with_path = false }]
 
-type mode = Wk | Rlx | Acq | Rel | RA | SC [@@deriving show]
-type scope = CTA | GPU | Sys [@@deriving show]
+type mem_ref = Ref of string
+[@@deriving show { with_path = false }]
+
+type amode = Rlx | RA | SC
+[@@deriving show { with_path = false }]
+
+type fmode = Acq | Rel | AR
+[@@deriving show { with_path = false }]
 
 let fresh_register =
   let reg_id = ref 0 in
@@ -45,46 +49,39 @@ let rec eval_expr env = function
   | Lt (e1, e2) -> if (eval_expr env e1 < eval_expr env e2) then 1 else 0
 
 type grammar = 
-  Skip
-| Assign of register * expr
-| Load of register * mem_ref * mode * scope
-| Store of mem_ref * mode * scope * expr
-| FenceStmt of mode * scope
-| Ite of expr * grammar * grammar
+  Assign of register * expr
+| Load of register * mem_ref * amode
+| Store of mem_ref * amode * expr
+| FenceStmt of fmode
+| Skip
 | Sequence of grammar * grammar
-| LeftPar of grammar * thread_id * grammar
-| CAS of register * mode * mode * scope * mem_ref * expr * expr
-| FADD of register * mode * mode * scope * mem_ref * expr
-| EXCHG of register * mode * mode * scope * mem_ref * expr
-[@@deriving show]
+| Ite of expr * grammar * grammar
+| LeftPar of grammar * grammar
+[@@deriving show { with_path = false }]
 
 type event = int
 
 type symbol =
   Write_sym
 | Downgrade of mem_ref
-[@@deriving show]
+[@@deriving show { with_path = false }]
          
 type formula =
   Expr of expr
 | EqExpr of expr * expr
 | EqVar  of mem_ref * expr
-| EqReg  of register * expr
-| Symbol of symbol
 | Not of formula
 | And of formula * formula
 | Or of formula * formula
 | Implies of formula * formula
 | True
 | False
-[@@deriving show]
+[@@deriving show { with_path = false }]
 
 let rec formula_map fn = function
     Expr _ as leaf -> fn leaf
   | EqExpr _ as leaf -> fn leaf
   | EqVar _ as leaf -> fn leaf
-  | EqReg _ as leaf -> fn leaf
-  | Symbol _ as leaf -> fn leaf
   | True as leaf -> fn leaf
   | False as leaf -> fn leaf
   | Not f -> Not (formula_map fn f)
@@ -92,41 +89,16 @@ let rec formula_map fn = function
   | Or (f1, f2) -> Or (formula_map fn f1, formula_map fn f2)
   | Implies (f1, f2) -> Implies (formula_map fn f1, formula_map fn f2)
 
+(* TODO: examine implementation *)
 let sub_reg e r = 
   formula_map (function
-    | EqReg (r', e') when r = r' -> EqExpr (e,e')
+    | EqExpr (R r', e') when r = r' -> EqExpr (e,e')
     | f -> f
-  )
-
-let rec rename_reg_expr ro rn = function
-    V v -> V v
-  | R r -> if r = ro then R rn else R r
-  | Eq (e1, e2) -> Eq (rename_reg_expr ro rn e1, rename_reg_expr ro rn e2)
-  | Gt (e1, e2) -> Gt (rename_reg_expr ro rn e1, rename_reg_expr ro rn e2)
-  | Gte (e1, e2) -> Gte (rename_reg_expr ro rn e1, rename_reg_expr ro rn e2)
-  | Lt (e1, e2) -> Lt (rename_reg_expr ro rn e1, rename_reg_expr ro rn e2)
-  | Lte (e1, e2) -> Lte (rename_reg_expr ro rn e1, rename_reg_expr ro rn e2)
-
-
-let rename_reg ro rn = 
-  formula_map (function
-    Expr e -> Expr (rename_reg_expr ro rn e)
-  | EqExpr (e1, e2) -> EqExpr (rename_reg_expr ro rn e1, rename_reg_expr ro rn e2)
-  | EqVar (m, e) -> EqVar (m, rename_reg_expr ro rn e)
-  | EqReg (r, e) when r = ro -> EqReg (rn, rename_reg_expr ro rn e)
-  | EqReg (r, e) -> EqReg (r, rename_reg_expr ro rn e)
-  | f -> f
   )
 
 let sub_loc e l =
   formula_map (function
     | EqVar (l',e') when l = l' -> EqExpr (e,e')
-    | f -> f
-  )
-
-let sub_sym phi s =
-  formula_map (function
-    | Symbol s' when s = s' -> phi
     | f -> f
   )
 
@@ -185,14 +157,12 @@ let eval_entails f1 f2 =
   let rec substitute f3 = function
       And (f,f') -> substitute (substitute f3 f) f'
     | EqVar  (l,e) -> sub_loc  e l f3
-    | EqReg  (r,e) -> sub_reg  e r f3
     | False -> True
     | True
     | Expr _
     | EqExpr _
     | Not _ -> f3 
     | Or _ -> raise (Invalid_argument "argument has Or (DjytOl)")
-    | Symbol _ -> raise (Invalid_argument "argument has Symbol (8z6kkd)")
     | Implies _ -> raise (Invalid_argument "argument has Implies (vQQNlT)")
   in
   let rec eval_dnf = function
@@ -201,145 +171,80 @@ let eval_entails f1 f2 =
   in
   eval_dnf (convert_dnf f1)
 
-let mode_order m n = 
-  match (m, n) with
-    Wk, _
-  | Rlx, Rel | Rlx, Acq | Rlx, RA -> true
-  | Rel, RA | Acq, RA -> true
-  | _, SC -> true
-  | _ -> false
-
-let lub f m n =
-  match (f m n, f n m) with
-    (true, false) -> Some n
-  | (false,true)
-  | (true, true)  -> Some m
-  | (false,false) -> None
-
-let mode_lub a b = Option.get @@ lub mode_order a b
+let tautology f = eval_entails True f
+let unsatisfiable f = eval_entails f False
 
 type action =
-  Write of thread_id * mode * scope * mem_ref * value
-| Read of thread_id * mode * scope * mem_ref * value
-| Fence of thread_id * mode * scope
+  Write of amode * mem_ref * value
+| Read of amode * mem_ref * value
+| Fence of fmode
 
-let tid_of = function
-    Read (t, _, _, _, _)
-  | Write (t, _, _, _, _)
-  | Fence (t, _, _) -> t
+let amode_of = function
+    Write (am,_,_)
+  | Read (am,_,_) -> Some am
+  | Fence _ -> None
 
-let mode_of = function
-    Write (_,m,_,_,_)
-  | Read (_,m,_,_,_)
-  | Fence (_,m,_) -> m
-
-let scope_of = function
-    Read (_, _, s, _, _)
-  | Write (_, _, s, _, _)
-  | Fence (_, _, s) -> s
+let fmode_of = function
+    Write _
+  | Read _ -> None
+  | Fence fm -> Some fm
 
 let mem_ref_of = function
-    Write (_,_,_,x,_)
-  | Read (_,_,_,x,_) -> Some x
+    Write (_,x,_)
+  | Read (_,x,_) -> Some x
   | Fence _ -> None
 
 let value_of = function
-    Write (_,_,_,_,v)
-  | Read (_,_,_,_,v) -> Some v
+    Write (_,_,v)
+  | Read (_,_,v) -> Some v
   | Fence _ -> None
 
 let is_access = function Read _ | Write _ -> true | Fence _ -> false
 let is_read   = function Read _ -> true | _ -> false
 let is_write  = function Write _ -> true | _ -> false
+let is_release a = amode_of a = Some RA || amode_of a = Some SC
 
-let matches a b =
-  match (a,b) with
-    Write (_,_,_,x,v), Read (_,_,_,x',v') -> x = x' && v = v' 
+(** Definition 2.1 *)
+let matches = curry @@ function
+    Write (_,x,v), Read (_,x',v') -> x = x' && v = v' 
   | _ -> false
 
-let blocks a b =
-  match (a,b) with
-    Write (_,_,_,x,_), Read (_,_,_,x',_) -> x = x'
+let blocks = curry @@ function
+    Write (_,x,_), Read (_,x',_) -> x = x'
   | _ -> false
 
-let overlaps a b =
-  match (mem_ref_of a, mem_ref_of b) with
-    Some x, Some x' -> x = x'
+let co_delays = curry @@ function
+    Write (_,x,_), Write (_,x', _)
+  | Read (_,x,_), Read (_,x',_)
+  | Write (_,x,_), Read (_,x',_) -> x = x'
   | _ -> false
 
-let coherence_delays a b =
-  match (a, b) with
-    Write _, Write _
-  | Read  _, Write _
-  | Write _, Read  _ -> 
-      mem_ref_of a = mem_ref_of b || (mode_of a = SC && mode_of b = SC)
-  | Read  _, Read _ -> mode_of a = SC && mode_of b = SC
+let sync_delays = curry @@ function
+    _, Write (RA,_,_) | _, Write (SC, _, _)
+  | _, Fence Rel | _, Fence AR
+  | Read _, Fence Acq -> true
+  | Read (_,x,_), Read (RA,x',_) when x = x' -> true
+  | Read (_,x,_), Read (SC,x',_) when x = x' -> true
+  | Read (RA,_,_), _ | Read (SC,_,_), _ -> true
+  | Fence Acq, _ | Fence AR, _ -> true
+  | Fence Rel, Write _ -> true
+  | Write (RA,x,_), Write (_,x',_) when x = x' -> true
+  | Write (SC,x,_), Write (_,x',_) when x = x' -> true
   | _ -> false
 
-let synchronisation_delays a b =
-  match (a, b) with
-    _, Write (_,m,_,_,_) when mode_order Rel m -> true
-  | _, Fence (_,m,_) when mode_order Rel m -> true
-  | Read _, Fence (_,m,_) when mode_order Acq m -> true
-  | Read (_,m,_,_,_), _ when mode_order Acq m -> true
-  | Fence (_,m,_),_ when mode_order Acq m -> true
-  | Fence (_,m,_), Write _ when mode_order Rel m -> true
-  | Write (_,m,_,_,_), Write _ when mode_order Rel m && mem_ref_of a = mem_ref_of b -> true
+let sc_delays = curry @@ function
+    Write (SC,_,_), Write (SC,_,_)
+  | Write (SC,_,_), Read (SC,_,_)
+  | Read (SC,_,_), Write (SC,_,_)
+  | Read (SC,_,_), Read (SC,_,_) -> true
   | _ -> false
 
-let is_release = function
-    Write (_,m,_,_,_) -> mode_order Rel m
-  | Fence (_,m,_) -> mode_order Rel m
-  | _ -> false
+let delays a b = co_delays a b || sync_delays a b || sc_delays a b
 
-let is_acquire = function
-    Write (_,m,_,_,_) -> mode_order Acq m
-  | Fence (_,m,_) -> mode_order Acq m
-  | _ -> false
-
-let merge a b =
-  match (a, b) with
-    Read (tid,m,s,x,v), Read (_,m',_,x',v') when x = x' && v = v' ->
-    [Read (tid,mode_lub m m',s,x,v)]
-  | Write (tid,m,s,x,_), Write (_,m',_,x',w) when x = x' ->
-    [Write (tid,mode_lub m m',s,x,w)]
-  | Write (tid,m,s,x,v), Read (_,m',_,x',v') when x = x' && v = v' && mode_order Rlx m' ->
-    [Write (tid,mode_lub m m',s,x,v)]
-  | Fence (tid,m,s), Fence(_,m',_) -> [Fence (tid,mode_lub m m',s)]
-  | _ -> []
-
-(** Definition 1.1 *)
-let strongly_overlaps eq_grp eq_proc a b =
-  is_access a && is_access b && (
-    tid_of a = tid_of b
-    || (
-      mode_of a <> Wk && mode_of b <> Wk   (* 2a *)
-      && (scope_of a = GPU || scope_of b = GPU) ==> eq_grp a b (* 2b *)
-      && (scope_of a = CTA || scope_of b = CTA) ==> eq_proc a b (* 2c *)
-    )
-  )
-
-let strongly_fences eq_grp eq_proc a b =
-  match a, b with
-    Fence _, Fence _ ->
-    tid_of a = tid_of b
-    || (
-      mode_of a <> Wk && mode_of b <> Wk   (* 2a *)
-      && (scope_of a = GPU || scope_of b = GPU) ==> eq_grp a b (* 2b *)
-      && (scope_of a = CTA || scope_of b = CTA) ==> eq_proc a b (* 2c *)
-    )
-  | _ -> false
-
-let strongly_matches eq_grp eq_proc a b =
-  is_release a && is_acquire b && (
-       strongly_overlaps eq_grp eq_proc a b 
-    || strongly_fences eq_grp eq_proc a b
-  )
-
-(** Definition 1.2 *)
+(** Definition 2.2 *)
 type transformer = formula -> formula
 
-(** Definition 1.3 *)
+(** Definition 2.3 *)
 type transformer_family = event set -> transformer
 
 (* This is a point at which the tool is incomplete. Quantifying all possible 
@@ -351,7 +256,7 @@ let wf_transformer_family p_univ e f tf =
     )
   )
 
-(* Definition M1-M9 *)
+(** Definition 2.4 *)
 type pomsetPT = {
   evs: event set;                                                   (* M1  *)
   lab: (event, action) environment;                                 (* M2  *)
@@ -362,10 +267,8 @@ type pomsetPT = {
   pt:   transformer_family;                                         (* M4  *)
   
   term: formula;                                                    (* M5  *)
-  dep:  (event, event) relation;                                    (* M6  *)
-  sync: (event, event) relation;                                    (* M7  *)
-  plo:  (event, event) relation;                                    (* M8  *)
-  rmw:  (event, event) relation;                                    (* M9  *)
+  rf:  (event, event) relation;                                     (* M6  *)
+  ord: (event, event) relation;                                     (* M7  *)
 
   (* This is used to compute  *)
   smap: (register, value) environment;
@@ -375,10 +278,8 @@ let eq_pomset p1 p2 =
   (* Strategically ordered to hopefully reduce exec time *)
     equal_set (=) p1.evs p2.evs
   && p1.term = p2.term
-  && equal_relation (=) (=) p1.dep p2.dep
-  && equal_relation (=) (=) p1.sync p2.sync
-  && equal_relation (=) (=) p1.plo p2.plo
-  && equal_relation (=) (=) p1.rmw p2.rmw
+  && equal_relation (=) (=) p1.rf p2.rf
+  && equal_relation (=) (=) p1.ord p2.ord
   && List.for_all (fun e1 -> p1.lab e1 = p2.lab e1) p1.evs
   && List.for_all (fun e1 -> p1.pre e1 = p2.pre e1) p1.evs
 
@@ -388,10 +289,8 @@ let empty_pomset = {
   pre = empty_env;
   pt = (fun _ps f -> f);
   term = True;
-  dep = [];
-  sync = [];
-  plo = [];
-  rmw = [];
+  rf = [];
+  ord = [];
   smap = empty_env_d (Val 0)
 }
 
@@ -399,60 +298,42 @@ let empty_pomset = {
 let wf_lab p = complete p.evs p.lab 
 
 (* M3 *)
-let wf_pre p = 
-     complete p.evs p.pre
-  && List.for_all (satisfiable <.> p.pre) p.evs                     (** M3a *)
+let wf_pre p = complete p.evs p.pre
 
 (* M4 *)
 (* Note: this is impractical to express, it requires quantifying all possible
    formulae *)
 let wf_pt _p = true
 
-let wf_term p = eval_entails p.term (p.pt p.evs (True))
-
 (* M6 *)
-let wf_dep p = partial_order p.dep
+let wf_rf p =
+     injective p.evs p.rf
+  && List.for_all (uncurry (matches <..> p.lab)) p.rf
 
 (* M7 *)
-let wf_sync p = partial_order p.sync
-
-(* M8 *)
-let wf_plo p =
-     partial_order p.plo
-  && List.for_all (fun (d, e) -> 
-    (overlaps <..> p.lab) d e ==> (List.mem (d,e) p.plo)            (* M8a *)
-  ) p.sync
-
-(* M9 *)
-let wf_rmw p =
-  List.for_all (fun (d, e) ->
-       ((blocks <..> p.lab) e d)                                    (* M9a *)
-    && (List.mem (d, e) p.sync && List.mem (d, e) p.plo)            (* M9b *)
-    && List.for_all (fun c ->
-      ((overlaps <..> p.lab) c d ==>
-        (* M9c i *)
-           (List.mem (c, e) p.dep  ==> List.mem (c, d) p.dep)
-        && (List.mem (c, e) p.sync ==> List.mem (c, d) p.sync)
-        && (List.mem (c, e) p.plo  ==> List.mem (c, d) p.plo)
-
-        (* M9c ii *)
-        && (List.mem (d, c) p.dep  ==> List.mem (e, c) p.dep)
-        && (List.mem (d, c) p.sync ==> List.mem (e, c) p.sync)
-        && (List.mem (d, c) p.plo  ==> List.mem (e, c) p.plo)
+let wf_ord p =
+     partial_order p.ord
+  && p.rf |> List.for_all (fun (d,e) ->
+      p.evs |> List.exists (fun c ->
+        (blocks <..> p.lab) c e ==> (
+          List.mem (c,d) p.ord || List.mem (e,c) p.ord
+        )
       )
-    ) p.evs
-  ) p.rmw
+    )
 
 let wf_pomset p = 
      wf_lab p
   && wf_pre p
   && wf_pt p
-  && wf_term p
-  && wf_dep p
-  && wf_sync p
-  && wf_plo p
-  && wf_rmw p
+  && wf_rf p
+  && wf_ord p
 
+let top_level p =
+     tautology p.term                                               (* T1  *)
+  && p.evs |> List.for_all (fun e ->                                (* T2  *)
+         tautology (p.pre e)                                        (* T2a *)
+      && is_read (p.lab e) ==> List.exists ((=) e <.> snd) p.rf     (* T2b *)
+    )
 
 (* We need to grow a candidate pomset such that with minimal changes to dep, 
    plo, etc. we have a candidate pomset as per definition C below. *)
@@ -747,14 +628,14 @@ let assign_gen r m =
 
 let assign_filter ps = ps
 
-let fence_gen mode scope tid = 
-  info "fence(%a)\n%!" pp_mode mode;
+let fence_gen mode = 
+  info "fence(%a)\n%!" pp_fmode mode;
   let id = fresh_id () in
   [
     {
       empty_pomset with
       evs = [id];                                                   (* F1  *)
-      lab = bind id (Fence (tid, mode, scope)) empty_env;           (* F2  *)
+      lab = bind id (Fence (mode)) empty_env;                       (* F2  *)
       pre = bind id True empty_env;                                 (* F3  *)
       pt = (fun _d f -> f);                                         (* F4  *)
       term = True;                                                  (* F5a *)
@@ -763,7 +644,7 @@ let fence_gen mode scope tid =
 
 let fence_filter ps = ps
 
-let read_gen vs r x mode scope tid = 
+let read_gen vs r x mode = 
   info "%a := %a\n%!" pp_register r pp_mem_ref x;
   vs |> List.map (fun v ->
     let id = fresh_id () in
@@ -772,7 +653,7 @@ let read_gen vs r x mode scope tid =
     {
       empty_pomset with
       evs = [id];                                                   (* R1  *)
-      lab = bind id (Read (tid, mode, scope, x, v)) empty_env;      (* R2  *)
+      lab = bind id (Read (mode, x, v)) empty_env;                  (* R2  *)
       pre = (fun _ -> True);                                        (* R3  *)
       pt = (fun d f ->
         if List.mem id d (* E n D <> empty *)
@@ -795,7 +676,7 @@ let read_gen vs r x mode scope tid =
 
 let read_filter ps = ps
 
-let write_gen vs x mode scope m tid = 
+let write_gen vs x mode m = 
   info "%a := %a\n%!" pp_mem_ref x pp_expr m;
   vs |> List.map (fun v ->
     let v = Val v in
@@ -803,7 +684,7 @@ let write_gen vs x mode scope m tid =
     { 
       empty_pomset with
       evs = [id];                                                   (* W1  *)
-      lab = bind id (Write (tid, mode, scope, x, v)) empty_env;     (* W2  *)
+      lab = bind id (Write (mode, x, v)) empty_env;                 (* W2  *)
       pre = bind id (EqExpr (m, V v)) empty_env;                    (* W3  *)
       pt = (fun _d f -> sub_loc m x f);                             (* W4  *)
       term = EqExpr (m, V v);                                       (* W5b *)
@@ -852,16 +733,15 @@ let grow_and_filter ps =
 
 (* Is it important to reject non-pomsets (according to M1-9) at each interpretation step, or can it 
    all be done at the end, as we currently do here? *)
-let interp vs tid prog = 
-  let rec go tid = function
+let interp vs prog = 
+  let rec go = function
     Assign (r, e) -> assign_gen r e
   | Skip -> [empty_pomset]
-  | Load (r, x, mode, scope) -> read_gen vs r x mode scope tid
-  | LeftPar (p1, tid', p2) -> pomsets_par_gen (go tid p1) (go tid' p2)
-  | Store (x, mode, scope, e) -> write_gen vs x mode scope e tid
-  | Sequence (p1, p2) -> pomsets_seq_gen (go tid p1) (go tid p2)
-  | FenceStmt (mode, scope) -> fence_gen mode scope tid
-  | Ite (e, p1, p2) -> if_gen (EqExpr (e, V (Val 0))) (go tid p1) (go tid p2)
-  | p -> raise (Invalid_argument (Format.sprintf "`%s' not supported. (Xvy8lB)" (show_grammar p)))
+  | Load (r, x, mode) -> read_gen vs r x mode
+  | LeftPar (p1, p2) -> pomsets_par_gen (go p1) (go p2)
+  | Store (x, mode, e) -> write_gen vs x mode e
+  | Sequence (p1, p2) -> pomsets_seq_gen (go p1) (go p2)
+  | FenceStmt (mode) -> fence_gen mode
+  | Ite (e, p1, p2) -> if_gen (EqExpr (e, V (Val 0))) (go p1) (go p2)
   in
-  grow_and_filter (go tid prog)
+  grow_and_filter (go prog)

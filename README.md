@@ -1,5 +1,5 @@
-# Pomsets with Predicate Transformers
-OCaml implementation of Pomsets with Predicate Transformers.
+# Predicate Transformers for Relaxed Memory
+OCaml implementation of Predicate Transformers for Relaxed Memory.
 
 ## Build this tool
 
@@ -31,7 +31,12 @@ Dune builds the executable at `./_build/default/src/pomsets.exe`.
 
 ```
 ./_build/default/src/pomsets.exe [OPTIONS] <FILENAME>
-  --tex   Use LaTeX output [default: false]
-  -help   Display this list of options
-  --help  Display this list of options
+  --log        Set the log level as one of {all, debug, warn, error, none} [default: none]
+  --log-time   Include time stamps in log output [default: false]
+  --program    Interpret a program from the command line.
+  --size       Print the number of completed pomsets [default: false]
+  --tex        Use LaTeX output [default: false]
+  --time       Show execution time [default: false]
+  -help        Display this list of options
+  --help       Display this list of options
 ```
