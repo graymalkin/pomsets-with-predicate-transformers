@@ -18,7 +18,7 @@ let check_outcome env =
 let pomsetpt (config, ast, outcomes) = 
   let config = Util.default RunConfig.default_configuration config in
   let vs = config.RunConfig.values in
-  let ps = interp vs (Tid 0) (ASTToPomsetPT.convert_program ast) in
+  let ps = interp vs (ASTToPomsetPT.convert_program ast) in
   ignore @@ Util.maybe (List.iter (fun o ->
     if not @@ List.exists (fun p -> check_outcome p.smap o) ps
     then Printf.printf "F"

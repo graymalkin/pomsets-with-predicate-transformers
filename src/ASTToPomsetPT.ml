@@ -22,7 +22,7 @@ let convert_access_ordering = function
 let convert_fence_ordering = function
   AST.Release -> PomsetPT.Rel
 | AST.Acquire -> PomsetPT.Acq
-| AST.SC -> PomsetPT.SC
+| AST.SC -> PomsetPT.AR
 | _ -> raise (Invalid_argument "fence mode not supported by PomsetPT (iZ7QX7)")
 
 (** TODO: Restrict valid ordering annotations for loads/stores/fences to match James' definitions *)
@@ -32,29 +32,12 @@ let rec convert_program = function
 | AST.Assign (r, e) ->
   PomsetPT.Assign (PomsetPT.Reg r, convert_expr e)
 | AST.Load (r, g, o, _e) ->
-  PomsetPT.Load (PomsetPT.Reg r, PomsetPT.Ref g, convert_access_ordering o, PomsetPT.Sys)
+  PomsetPT.Load (PomsetPT.Reg r, PomsetPT.Ref g, convert_access_ordering o)
 | AST.Store (g, e, o, _rmw) ->
-  PomsetPT.Store (PomsetPT.Ref g, convert_access_ordering o, PomsetPT.Sys, convert_expr e)
-| AST.Fence o -> PomsetPT.FenceStmt (convert_fence_ordering o, PomsetPT.Sys)
+  PomsetPT.Store (PomsetPT.Ref g, convert_access_ordering o, convert_expr e)
+| AST.Fence o -> PomsetPT.FenceStmt (convert_fence_ordering o)
 | AST.Conditional (be, pt, pf) ->
   PomsetPT.Ite (convert_bexpr be, convert_program pt, convert_program pf)
 | AST.Sequence (p1, p2) -> PomsetPT.Sequence (convert_program p1, convert_program p2)
-| AST.Parallel (p1, p2) -> PomsetPT.LeftPar (convert_program p1, PomsetPT.Tid 0, convert_program p2)
-| AST.Cas (r, g, o1, o2, e1, e2) ->
-  PomsetPT.CAS (PomsetPT.Reg r,
-    convert_access_ordering o1,
-    convert_access_ordering o2,
-    PomsetPT.Sys,
-    PomsetPT.Ref g,
-    convert_expr e1,
-    convert_expr e2
-  )
-| AST.Fadd (r, g, _rmw, o1, o2, e) ->
-  PomsetPT.FADD (PomsetPT.Reg r,
-    convert_access_ordering o1,
-    convert_access_ordering o2,
-    PomsetPT.Sys,
-    PomsetPT.Ref g,
-    convert_expr e
-  )
+| AST.Parallel (p1, p2) -> PomsetPT.LeftPar (convert_program p1, convert_program p2)
 | _ -> raise Util.Not_implemented

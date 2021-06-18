@@ -4,10 +4,10 @@ open PomsetPT
 open Relation
 open Util
 
-let p = Symbol Write_sym
-let q = Symbol Write_sym
-let r = Symbol Write_sym
-let s = Symbol Write_sym
+let p = True
+let q = True
+let r = True
+let s = True
 
 let input1 = And (Or (p, q), Or (r, s))
 let expect1 = Or (
@@ -75,8 +75,8 @@ let test_gen_rf_one_edge _ =
       empty_pomset with
       evs = [1;2];
       lab = empty_pomset.lab |> 
-        Util.bind 1 (Read (Tid 0, Rlx, Sys, Ref "x", Val 0)) |>
-        Util.bind 2 (Write (Tid 0, Rlx, Sys, Ref "x", Val 0));
+        Util.bind 1 (Read (Rlx, Ref "x", Val 0)) |>
+        Util.bind 2 (Write (Rlx, Ref "x", Val 0));
     }
   in
   let rfs = (gen_rf_candidates p) in
@@ -93,9 +93,9 @@ let test_gen_rf_choice _ =
       empty_pomset with
       evs = [1;2;3];
       lab = empty_pomset.lab |> 
-           Util.bind 1 (Read (Tid 0, Rlx, Sys, Ref "x", Val 0))
-        |> Util.bind 2 (Write (Tid 0, Rlx, Sys, Ref "x", Val 0))
-        |> Util.bind 3 (Write (Tid 0, Rlx, Sys, Ref "x", Val 0));
+           Util.bind 1 (Read (Rlx, Ref "x", Val 0))
+        |> Util.bind 2 (Write (Rlx, Ref "x", Val 0))
+        |> Util.bind 3 (Write (Rlx, Ref "x", Val 0));
     }
   in
   let rfs = (gen_rf_candidates p) in
@@ -119,34 +119,24 @@ let pomset_pt_utility_definitions =
   ; "generate multiple choices of rf" >:: test_gen_rf_choice
   ]
 
-let test_empty_is_candidate _ =
-  let fences _ _ = true in
-  assert_equal true (candidate overlaps matches fences empty_pomset [])
-
-let test_grow_candidate_empty _ =
-  let fences _ _ = false in
-  assert_equal ~cmp:(equal_set eq_pomset) [empty_pomset] (
-    grow_candidate overlaps matches fences empty_pomset []
-  )
-
-let test_grow_and_filter_empty _ =
-  assert_equal ~cmp:(equal_set eq_pomset) [empty_pomset] (grow_and_filter [empty_pomset])
+(* let test_grow_and_filter_empty _ =
+  assert_equal ~cmp:(equal_set eq_pomset) [empty_pomset] (grow_and_filter [empty_pomset]) *)
 
 
 let pomset_pt_candidacy =
   "PomsetPT Candidate Pomset" >::: [
-    "empty is candidate" >:: test_empty_is_candidate
+    (* "empty is candidate" >:: test_empty_is_candidate
   ; "grow and filter empty" >:: test_grow_and_filter_empty
-  ; "grow empty pomset generates empty pomset" >:: test_grow_candidate_empty
+  ; "grow empty pomset generates empty pomset" >:: test_grow_candidate_empty *)
   ]
 
 (* [[skip]] = empty *)
 let test_interp_skip _ =
-  assert_equal ~cmp:(equal_set eq_pomset) [empty_pomset] (interp [0;1] (Tid 0) Skip) 
+  assert_equal ~cmp:(equal_set eq_pomset) [empty_pomset] (interp [0;1] Skip) 
 
 let test_singleton_write _ =
   assert_bool "cannot find pomset with write" (
-    (interp [0;1] (Tid 0) (Store (Ref "x", Rlx, Sys, V (Val 0))))
+    (interp [0;1] (Store (Ref "x", Rlx, V (Val 0))))
     |> List.exists (fun p ->
       List.exists (is_write <.> p.lab) p.evs
     )
@@ -155,11 +145,11 @@ let test_singleton_write _ =
 (* [[x := 1; r1 := x]] contains a pomset with a read event *)
 let test_singleton_read _ =
   assert_bool "cannot find pomset with read" (
-    (interp [0;1] (Tid 0) (
+    (interp [0;1] (
       Sequence (
         Sequence (
-          Store (Ref "x", Rlx, Sys, V (Val 0)),
-          Load (Reg "1", Ref "x", Rlx, Sys)
+          Store (Ref "x", Rlx, V (Val 0)),
+          Load (Reg "1", Ref "x", Rlx)
         ), Skip)
       )
     ) |> List.exists (fun p ->

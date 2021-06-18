@@ -57,15 +57,19 @@ type grammar =
 | Sequence of grammar * grammar
 | Ite of expr * grammar * grammar
 | LeftPar of grammar * grammar
-[@@deriving show { with_path = false }]
+
+let rec pp_grammar fmt = function
+    Assign (Reg r, e) -> Format.fprintf fmt "%s := %a" r pp_expr e
+  | Load (Reg r, Ref x, am) -> Format.fprintf fmt "%s := %s.load(%a)" r x pp_amode am
+  | Store (Ref x, am, e) -> Format.fprintf fmt "%s.store(%a, %a)" x pp_amode am pp_expr e
+  | FenceStmt fm -> Format.fprintf fmt "fence(%a)" pp_fmode fm
+  | Skip -> Format.fprintf fmt "skip"
+  | Sequence (p1, p2) -> Format.fprintf fmt "%a; %a" pp_grammar p1 pp_grammar p2
+  | Ite (e, p1, p2) -> Format.fprintf fmt "if(%a) { %a } else { %a }" pp_expr e pp_grammar p1 pp_grammar p2
+  | LeftPar (p1, p2) -> Format.fprintf fmt "(%a) || (%a)" pp_grammar p1 pp_grammar p2
 
 type event = int
 
-type symbol =
-  Write_sym
-| Downgrade of mem_ref
-[@@deriving show { with_path = false }]
-         
 type formula =
   Expr of expr
 | EqExpr of expr * expr
@@ -199,6 +203,12 @@ let value_of = function
   | Read (_,_,v) -> Some v
   | Fence _ -> None
 
+let eq_action = curry @@ function
+  Read (m,x,v), Read (m',x',v')
+| Write (m,x,v), Write (m',x',v') -> m = m' && x = x' && v = v'
+| Fence m, Fence m' -> m = m'
+| _ -> false
+
 let is_access = function Read _ | Write _ -> true | Fence _ -> false
 let is_read   = function Read _ -> true | _ -> false
 let is_write  = function Write _ -> true | _ -> false
@@ -270,9 +280,27 @@ type pomsetPT = {
   rf:  (event, event) relation;                                     (* M6  *)
   ord: (event, event) relation;                                     (* M7  *)
 
-  (* This is used to compute  *)
+  (* This is used to compute final state *)
   smap: (register, value) environment;
 }
+
+(** Pomset Utils *)
+let eqr_to_mapping eqr =
+  function e -> 
+    try List.assoc e eqr
+    with Not_found -> e
+
+let relabel f ps =
+  { 
+    evs = List.map f ps.evs;
+    lab = (fun e -> ps.lab (f e));
+    pre = (fun e -> ps.pre (f e));
+    pt = (fun d form -> ps.pt (List.map f d) form);
+    term = ps.term;
+    rf = List.map (fun (l, r) -> f l, f r) ps.rf;
+    ord = List.map (fun (l, r) -> f l, f r) ps.ord;
+    smap = ps.smap
+  }
 
 let eq_pomset p1 p2 =
   (* Strategically ordered to hopefully reduce exec time *)
@@ -295,7 +323,7 @@ let empty_pomset = {
 }
 
 (* M2 *)
-let wf_lab p = complete p.evs p.lab 
+let wf_lab p = complete p.evs p.lab
 
 (* M3 *)
 let wf_pre p = complete p.evs p.pre
@@ -335,130 +363,13 @@ let top_level p =
       && is_read (p.lab e) ==> List.exists ((=) e <.> snd) p.rf     (* T2b *)
     )
 
-(* We need to grow a candidate pomset such that with minimal changes to dep, 
-   plo, etc. we have a candidate pomset as per definition C below. *)
-let grow_candidate strongly_overlaps strongly_matches strongly_fences p rf =
-  let strongly_overlaps = strongly_overlaps <..> p.lab in
-  let strongly_matches = strongly_matches <..> p.lab in
-  let _strongly_fences = strongly_fences <..> p.lab in
 
-  (* d -> e ∈ rf => d -> e ∈ dep *)
-  let c6_expand = { p with dep = p.dep <|> rf } in
-
-  (* if d' <= d -rf-> e, and λ(d') strongly matches λ(e') then d' <= e' *)
-  let c7a = map_default [c6_expand] (fun d' ->
-      let new_dep_edges = List.fold_left (fun acc (d, e) ->
-          if List.mem (d', d) c6_expand.dep && strongly_matches d e 
-          then (d, e) :: acc
-          else acc
-        ) [] rf
-      in
-      { c6_expand with dep = c6_expand.dep <|> new_dep_edges }
-    ) c6_expand.evs
-  in
-
-  let c7b = List.flatten @@ (c7a |> List.map (fun p ->
-      let sync_choices = List.fold_left (fun acc (d, e) -> 
-          if strongly_matches d e
-          then [(d, e); (e, d)] :: acc
-          else acc
-        ) [] (cross p.evs p.evs)
-      in
-      map_default [p] (fun sync_ext -> { p with sync = p.sync <|> sync_ext }) (BatList.n_cartesian_product sync_choices)
-    ))
-  in
-
-  (* d -> e ∈ rf => d -> e ∈ plo *)
-  let c8a = List.map (fun p -> { p with plo = p.plo <|> rf }) c7b in
-
-  let weak_plo_per_rf = rf |> List.map (fun (r, w) ->
-      (
-        (List.filter (strongly_overlaps w) p.evs) |> List.map (fun c ->
-          (c, r)
-        )
-      ) @ (
-        (List.filter (strongly_overlaps r) p.evs) |> List.map (fun c ->
-          (w, c)
-        )
-      )
-    )
-  in
-
-  let weak_plo_per_rf = 
-    List.filter (List.for_all (fun (d, e) -> List.mem (e, d) p.plo ==> (d = e))) weak_plo_per_rf
-  in
-
-  let weak_plo_extensions = BatList.n_cartesian_product weak_plo_per_rf in
-  let c8b = big_union @@ List.map (fun p ->
-      List.map (fun plo_ext ->
-        { p with plo = p.plo <|> plo_ext }
-      ) weak_plo_extensions
-    ) c8a
-  in
-  c8b
-
-let candidate strongly_overlaps strongly_matches strongly_fences p rf =
-  let strongly_overlaps = strongly_overlaps <..> p.lab in
-  let strongly_matches = strongly_matches <..> p.lab in
-  let strongly_fences = strongly_fences <..> p.lab in
-  let weak_plo d' e' =
-      ((List.mem (d', e') p.plo) ==> (d' = e'))
-    && (strongly_overlaps d' e' ==> List.mem (d', e') p.plo)
-  in
-  injective (List.filter (is_read <.> p.lab) p.evs) rf              (* C1  *)
-  && List.for_all (fun (d, e) ->
-       matches (p.lab d) (p.lab e)                                  (* C2  *)
-    && List.for_all (fun c -> 
-      (blocks <..> p.lab) c e ==> weak_plo c d || weak_plo e c
-      ) p.evs (* C2 *) 
-    && List.mem (d, e) p.dep (* C6 *)
-    && List.for_all (fun d' ->
-        List.for_all (fun e' ->
-          (List.mem (d', d) p.sync 
-            && List.mem (e, e') p.sync 
-            && strongly_matches d' e'
-          ) ==> (List.mem (d', e') p.sync)
-        ) p.evs
-      ) p.evs (* C7a *)
-    && strongly_fences d e ==> (
-      List.mem (d, e) p.sync || List.mem (e, d) p.sync
-      ) (* C7b *)
-    && List.mem (d, e) p.plo (* C8a *)
-    && List.for_all (fun c ->
-      (blocks <..> p.lab) c e ==> (weak_plo c d || weak_plo e c)
-    ) p.evs (* C8b *)
-  ) rf
-
-let top_level strongly_overlaps strongly_matches strongly_fences p rf =
-  candidate strongly_overlaps strongly_matches strongly_fences p rf
-  && List.for_all (fun e ->
-      (is_read (p.lab e) ==> List.exists (fun d -> List.mem (d, e) rf) p.evs) (* T2 *)
-      && eval_formula (p.pre e) (* T3 *)
-    ) p.evs
-  && eval_formula p.term (* T5 *)
-
-(* TODO: This has changed (11-05-2021) *)
-(* let refines p1 p2 = subset (=) p1 p2 *)
-
-(** Pomset Utils *)
-let eqr_to_mapping eqr =
-  function e -> 
-    try List.assoc e eqr
-    with Not_found -> e
-
-let relabel f ps =
-  { 
-    evs = List.map f ps.evs;
-    lab = (fun e -> ps.lab (f e));
-    pre = (fun e -> ps.pre (f e));
-    pt = (fun d form -> ps.pt (List.map f d) form);
-    term = ps.term;
-    dep = List.map (fun (l, r) -> f l, f r) ps.dep;
-    sync = List.map (fun (l, r) -> f l, f r) ps.sync;
-    plo = List.map (fun (l, r) -> f l, f r) ps.plo;
-    rmw = List.map (fun (l, r) -> f l, f r) ps.rmw;
-    smap = ps.smap
-  }
+let build_extensions r1 r2 e1 e2 =
+  let e1r = e1 <-> e2 in
+  let e2r = e2 <-> e1 in
+  powerset (
+    (cross e1r e2r) <|> (cross e2r e1r)
+  ) |> List.map (fun ext -> ext <|> r1 <|> r2)
 
 (** Semantics *)
 let pomset_skip = [empty_pomset]
@@ -469,24 +380,34 @@ let pomset_skip = [empty_pomset]
   always preserved. *)
 let pomsets_par_gen ps1 ps2 =
   info "PAR(PS1, PS2)\n%!";
-  List.map (fun (p1, p2) ->
-    {
-      evs = p1.evs <|> p2.evs;                                      (* P1  *)
-      lab = join_env p1.lab p2.lab;                                 (* P2  *)
-      pre = join_env p1.pre p2.pre;                                 (* P3a,b *)
-      pt = p1.pt;                                                   (* P4  *)
-      term = And (p1.term, p2.term);                                (* P5  *)
+  let extended_ps = List.flatten @@ List.flatten @@ List.map (fun (p1, p2) ->
+      let rf_extensions = build_extensions p1.rf p2.rf p1.evs p2.evs in
+      let ord_extensions = build_extensions p1.ord p2.ord p1.evs p2.evs in
+      rf_extensions |> List.map (fun rf_ext ->
+        (* This generation might yield some duplicate pomsets, this could be optimised. *)
+        let rf_ord_ext = rf_ext |> List.filter (fun (d,e) -> 
+               List.mem d p1.evs 
+            && List.mem e p2.evs
+          )
+        in
+        ord_extensions |> List.map (fun ord_ext ->
+          {
+            evs = p1.evs <|> p2.evs;                                      (* P1  *)
+            lab = join_env p1.lab p2.lab;                                 (* P2  *)
+            pre = join_env p1.pre p2.pre;                                 (* P3a,b *)
+            pt = p1.pt;                                                   (* P4  *)
+            term = And (p1.term, p2.term);                                (* P5  *)
 
-      dep = p1.dep <|> p2.dep;                                      (* P6  *)
-      sync = p1.sync <|> p2.sync;                                   (* P7  *)
-      plo = p1.plo <|> p2.plo;                                      (* P8  *)
-      rmw = p1.rmw <|> p2.plo;                                      (* P9  *)
-      smap = join_env p1.smap p2.smap;
-    }
-  ) (cross ps1 ps2)
+            rf =  rf_ext;                                                 (* P6 *)
+            ord = ord_ext <|> rf_ord_ext;                                 (* P7a,b *)
 
-let pomsets_par_filer ps = ps
-
+            smap = join_env p1.smap p2.smap;
+          }
+        )
+      )
+    ) (cross ps1 ps2)
+  in
+  List.filter wf_pomset extended_ps
 
 (** TODO: we're using the minimal dep relation, rather than any subset -- is this safe? *)
 (** We are now computing all the possible reads that could interfere, see note below. *)
@@ -502,75 +423,61 @@ let pomsets_seq_gen ps1 ps2 =
       let read_sets = powerset (List.filter (is_read <.> lab_new) (p1.evs <|> p2.evs)) in
 
       (* The overlap of E1 and E2 must satisfy some compatibility predicate *)
-      (* TODO: is this choice of predicate actually correct? It has bad code-smell *)
-      let eqrs = List.filter (fun eqr ->
-          List.for_all (fun (a, b) -> 
-            try merge (p1.lab a) (p2.lab b) <> []
-            with Invalid_argument _ -> false (*  Events are un-mergable because of incompatible modes *)
-          ) eqr
-        ) (pairings p1.evs p2.evs)
+      let eqrs = List.filter (
+          List.for_all (fun (a, b) -> eq_action (p1.lab a) (p2.lab b))
+        ) (pairings p1.evs p2.evs) 
       in
 
-      (* TODO: This misses rules i3a-c, and might generate down-useful events which are     
-          incompatible with dep. *)
-      let down_useful = List.filter (is_write <.> lab_new) (p1.evs <|> p2.evs) in
+      let rf_extensions = build_extensions p1.rf p2.rf p1.evs p2.evs in
+      let ord_extensions = build_extensions p1.ord p2.ord p1.evs p2.evs in
 
-      (* Build all possible relations from down-useful, and filter from compatibility with dep *)
-      let down_useful = powerset down_useful 
-        |> List.map (fun du -> cross du du)
-        |> List.filter (fun du -> partial_order (p1.dep <|> p2.dep <|> du))
-      in
-
-      List.flatten @@ List.flatten @@ (
+      List.flatten @@ List.flatten @@ List.flatten @@ (
         read_sets |> List.map (fun rs -> 
           eqrs |> List.map (fun eqr ->
-            down_useful |> List.map (fun du ->
-              let f = eqr_to_mapping eqr in
-              let down e = List.find_all (fun c -> List.mem (c, e) (p1.dep <|> p2.dep <|> du)) rs in
-              let k2' e = 
-                if is_read (lab_new e) 
-                then p1.pt p1.evs (p2.pre e)
-                else p1.pt (down e) (p2.pre e)
+            rf_extensions |> List.map (fun rf_ext ->
+              let rf_ord_ext = rf_ext |> List.filter (fun (d,e) -> 
+                     List.mem d p1.evs 
+                  && List.mem e p2.evs
+                )
               in
-              (* eqr is used to map ids from p1 into ids to p2 to generate merge opportunities *)
-              let p1 = relabel f p1 in 
-              let s7a = List.filter (fun (d, e) -> 
-                     synchronisation_delays (p1.lab d) (p2.lab e) 
-                  && satisfiable (And (p1.pre d, p2.pre e))
-                ) (cross p1.evs p2.evs) 
+              let delays_ord_ext = (cross p1.evs p2.evs) |> List.filter (fun (a,b) ->
+                  delays (p1.lab a) (p2.lab b)
+                )
               in
-              let s8a = List.filter (fun (d, e) -> 
-                     coherence_delays (p1.lab d) (p2.lab e) 
-                  && satisfiable (And (p1.pre d, p2.pre e))
-                ) (cross p1.evs p2.evs) 
-              in
-              {
-                evs = p1.evs <|> p2.evs;
-                lab = lab_new;                                              (* S2  *)
+              ord_extensions |> List.map (fun ord_ext ->
+                let f = eqr_to_mapping eqr in
+                let down e = List.find_all (fun c -> List.mem (c, e) ord_ext) rs in
+                let k2' e = p1.pt (down e) (p2.pre e) in
 
-                pre = (fun e ->
-                  let pre1 = 
-                    if List.mem e p1.evs && List.mem e p2.evs
-                    then And (Or (p1.pre e, k2' e), p1.term)                (* S3c  *)
-                    else (
-                      if List.mem e (p1.evs <-> p2.evs)
-                      then p1.pre e                                         (* S3a *)
-                      else And (p2.pre e, p1.term)                          (* S3b *)
-                    )
-                  in
-                  if is_release (lab_new e)
-                  then And (p1.term, pre1)                                  (* S3d *)
-                  else pre1
-                );
+                (* eqr is used to map ids from p1 into ids to p2 to generate merge opportunities *)
+                let p1 = relabel f p1 in 
+                {
+                  evs = p1.evs <|> p2.evs;
+                  lab = lab_new;                                              (* S2  *)
 
-                pt = (fun d f -> p1.pt d (p2.pt d f));                      (* S4  *)
-                term = And (p1.term, p1.pt p1.evs p2.term);                 (* S5  *)
-                dep = p1.dep <|> p2.dep <|> du;                             (* S6  *)
-                sync = p1.sync <|> p2.sync <|> s7a;                         (* S7,S7a *)
-                plo = p1.plo <|> p2.plo <|> s8a;                            (* S8,S8a *)
-                rmw = p1.rmw <|> p2.rmw;                                    (* S9  *)
-                smap = join_env p1.smap p2.smap;
-              }
+                  pre = (fun e ->
+                    let pre1 = 
+                      if List.mem e p1.evs && List.mem e p2.evs
+                      then Or (p1.pre e, k2' e)                               (* S3c  *)
+                      else (
+                        if List.mem e (p1.evs <-> p2.evs)
+                        then p1.pre e                                         (* S3a *)
+                        else k2' e                                            (* S3b *)
+                      )
+                    in
+                    if is_release (lab_new e)
+                    then And (p1.term, pre1)                                  (* S3d *)
+                    else pre1
+                  );
+
+                  pt = (fun d f -> p1.pt d (p2.pt d f));                      (* S4  *)
+                  term = And (p1.term, p1.pt p1.evs p2.term);                 (* S5  *)
+                  rf = rf_ext;                                                (* S6  *)
+                  ord = ord_ext <|> rf_ord_ext <|> delays_ord_ext;            (* S7a,b,c *)
+
+                  smap = join_env p1.smap p2.smap;
+                }
+              )
             )
           )
         )
@@ -580,23 +487,29 @@ let pomsets_seq_gen ps1 ps2 =
 
 let if_gen cond ps1 ps2 =
   List.flatten ((cross ps1 ps2) |> List.map (fun (p1, p2) -> 
-    List.map (fun eqr ->
+    let eqrs = pairings p1.evs p2.evs in
+    let eqrs_compatible = List.filter (
+        List.for_all (fun (a, b) -> eq_action (p1.lab a) (p2.lab b))
+      ) eqrs 
+    in
+
+    eqrs_compatible |> List.map (fun eqr ->
       let f = eqr_to_mapping eqr in
       let p1 = relabel f p1 in 
       {
-        evs = p1.evs <|> p2.evs;                                    (* I1  *)
-        lab = join_env p1.lab p2.lab;                               (* I2  *)
+        evs = p1.evs <|> p2.evs;                                    (* C1  *)
+        lab = join_env p1.lab p2.lab;                               (* C2  *)
 
         pre = (fun e ->
             if List.mem e p1.evs && List.mem e p2.evs
-            then Or (                                               (* I3c *)
+            then Or (                                               (* C3c *)
               And (cond, p1.pre e),
               And (Not cond, p2.pre e)
             )
             else (
               if List.mem e p1.evs
-              then And (cond, p1.pre e)                             (* I3a *)
-              else And (Not cond, p2.pre e)                         (* I3b *)
+              then And (cond, p1.pre e)                             (* C3a *)
+              else And (Not cond, p2.pre e)                         (* C3b *)
             )
           ); 
         
@@ -607,14 +520,14 @@ let if_gen cond ps1 ps2 =
           )
         );
         
-        term = Or (And (cond, p1.term), And (Not cond, p2.term));   (* I5  *)
-        dep = p1.dep <|> p2.dep;                                    (* I6  *)
-        sync = p1.sync <|> p2.sync;                                 (* I7  *)
-        plo = p1.plo <|> p2.plo;                                    (* I8  *)
-        rmw = p1.rmw <|> p2.rmw;                                    (* I9  *)
+        term = Or (And (cond, p1.term), And (Not cond, p2.term));   (* C5  *)
+        (* TODO: The rules say rf extends rf1 and rf2, and also says rf <= (rf1 + rf2). This seems contradictory and leaves only rf = rf1 + rf2. This is fishy. *)
+        rf = p1.rf <|> p2.rf;                                       (* C6a,b *)
+        ord = p1.ord <|> p2.ord;                                    (* C7a,b *)
+
         smap = join_env p1.smap p2.smap;
       }
-    ) (pairings p1.evs p2.evs)
+    ) 
   ))
 
 let assign_gen r m = 
@@ -636,11 +549,11 @@ let fence_gen mode =
       empty_pomset with
       evs = [id];                                                   (* F1  *)
       lab = bind id (Fence (mode)) empty_env;                       (* F2  *)
-      pre = bind id True empty_env;                                 (* F3  *)
+      pre = bind id True empty_env;                                 (* unconstrained *)
       pt = (fun _d f -> f);                                         (* F4  *)
-      term = True;                                                  (* F5a *)
+      term = True;                                                  (* unconstrained *)
     }
-  ] <|> [{empty_pomset with term = False}]                          (* F5b *)
+  ] <|> [{empty_pomset with term = False}]                          (* F5 *)
 
 let fence_filter ps = ps
 
@@ -649,28 +562,24 @@ let read_gen vs r x mode =
   vs |> List.map (fun v ->
     let id = fresh_id () in
     let v = Val v in
-    let se = fresh_register () in
     {
       empty_pomset with
       evs = [id];                                                   (* R1  *)
       lab = bind id (Read (mode, x, v)) empty_env;                  (* R2  *)
-      pre = (fun _ -> True);                                        (* R3  *)
+      pre = (fun _ -> True);                                        (* unconstrained  *)
       pt = (fun d f ->
-        if List.mem id d (* E n D <> empty *)
-        then Implies (EqExpr (V v, R se), rename_reg se r f)        (* R4a *)
-        else Implies (                                              (* R4b *)
-            Or (EqExpr (V v, R se), EqVar (x, R se)), 
-            rename_reg se r f
-          )
+        if List.mem id d (* E n D != empty *)
+        then Implies (EqExpr (V v, R r), f)                         (* R4a *)
+        else Implies (Or (EqExpr (V v, R r), EqVar (x, R r)), f)    (* R4b *)
       );
-      term = True;                                                  (* R5a *)
-      smap = bind se v empty_pomset.smap;
+      term = True;                                                  (* unconstrained *)
+      smap = bind r v empty_pomset.smap;
     }
   ) <|> [
-    { 
+    {
       empty_pomset with
-      term = if mode_order mode Acq then False else True;           (* R5b *)
-      (* R4c does not need to be implemented, as we do not re-use registers. *)
+      pt = (fun _d f -> f);                                         (* R4c *)
+      term = if mode <> Rlx then False else True;                   (* R5 *)
     }
   ]
 
@@ -687,17 +596,15 @@ let write_gen vs x mode m =
       lab = bind id (Write (mode, x, v)) empty_env;                 (* W2  *)
       pre = bind id (EqExpr (m, V v)) empty_env;                    (* W3  *)
       pt = (fun _d f -> sub_loc m x f);                             (* W4  *)
-      term = EqExpr (m, V v);                                       (* W5b *)
+      term = EqExpr (m, V v);                                       (* W5a *)
     }
   ) <|> [
     {
       empty_pomset with 
       pt = (fun _d f -> sub_loc m x f);                             (* W4  *)
-      term = False                                                  (* W5a *)
+      term = False                                                  (* W5b *)
     }
   ]
-
-let write_filter ps = ps
 
 let gen_rf_candidates p =
   let reads = List.filter (is_read <.> p.lab) p.evs in
@@ -716,32 +623,13 @@ let gen_rf_candidates p =
   in
   big_union (List.map powerset (BatList.n_cartesian_product wr_sloc_sval))
 
-let grow_and_filter ps =
-  let fences _ _ = false in
-  let grow = 
-    List.flatten @@ List.flatten (
-      ps |> List.map (fun p ->
-        gen_rf_candidates p |> List.map (grow_candidate overlaps matches fences p)
-      )
-    )
-  in
-
-  grow 
-  (* |> List.filter (fun p ->
-    List.exists (candidate overlaps matches fences p) (gen_rf_candidates p)
-  ) *)
-
-(* Is it important to reject non-pomsets (according to M1-9) at each interpretation step, or can it 
-   all be done at the end, as we currently do here? *)
-let interp vs prog = 
-  let rec go = function
+let rec interp vs = function
     Assign (r, e) -> assign_gen r e
   | Skip -> [empty_pomset]
   | Load (r, x, mode) -> read_gen vs r x mode
-  | LeftPar (p1, p2) -> pomsets_par_gen (go p1) (go p2)
+  | LeftPar (p1, p2) -> pomsets_par_gen (interp vs p1) (interp vs p2)
   | Store (x, mode, e) -> write_gen vs x mode e
-  | Sequence (p1, p2) -> pomsets_seq_gen (go p1) (go p2)
+  | Sequence (p1, p2) -> pomsets_seq_gen (interp vs p1) (interp vs p2)
   | FenceStmt (mode) -> fence_gen mode
-  | Ite (e, p1, p2) -> if_gen (EqExpr (e, V (Val 0))) (go p1) (go p2)
-  in
-  grow_and_filter (go prog)
+  | Ite (e, p1, p2) -> if_gen (EqExpr (e, V (Val 0))) (interp vs p1) (interp vs p2)
+  
