@@ -319,7 +319,7 @@ let empty_pomset = {
   term = True;
   rf = [];
   ord = [];
-  smap = empty_env_d (Val 0)
+  smap = empty_env
 }
 
 (* M2 *)

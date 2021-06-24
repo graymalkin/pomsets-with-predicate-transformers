@@ -80,10 +80,10 @@ let inv = rel_invert
 
 let injective d r =
   List.for_all (fun x ->
-    List.length (List.filter (fun (x', _) -> x = x') r) = 1
+    List.length (List.filter (fun (x', _) -> x = x') r) <= 1
   ) d &&
   List.for_all (fun (_, b) ->
-    List.length (List.filter (fun (_, b') -> b = b') r) = 1
+    List.length (List.filter (fun (_, b') -> b = b') r) <= 1
   ) r
 
 let surjective cd r = 

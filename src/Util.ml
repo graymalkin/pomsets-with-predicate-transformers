@@ -23,18 +23,8 @@ let fresh_id =
 type ('a, 'b) environment = 'a -> 'b
 let bind k v env = function k' -> if k = k' then v else env k'
 let empty_env = function _ -> raise Not_found
-let empty_env_d d = function _ -> d
 let join_env e1 e2 p = try e1 p with Not_found -> e2 p
 let complete d env = List.for_all (fun e -> try ignore @@ env e; true with Not_found -> false) d
-
-(* Option type utilities *)
-let default d = function
-  None -> d
-| Some s -> s
-
-let maybe f = function 
-  None -> None
-| Some x -> Some (f x)
 
 let map_default d f xs = 
   if xs = [] 

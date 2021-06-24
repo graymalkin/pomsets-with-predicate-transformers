@@ -3,26 +3,38 @@
   pomsetpt takes the output of the parser and runs the pomsetpt semantics over it.
  *)
 
-open PomsetPT
+open PomsetPTSeq
 
 let print_latex = ref false
 let print_size = ref false
 let print_time = ref false
 
 let check_outcome env = 
-  let trans_env r = let Val v = env (Reg r) in v in
+  let trans_env r = 
+    try 
+      let Val v = env (Reg r) in 
+      v
+    with Not_found -> 0
+  in
   function
     AST.Allowed (bexpr, _, _) -> AST.eval_bexpr (trans_env) bexpr
   | AST.Forbidden (bexpr, _, _) -> not (AST.eval_bexpr (trans_env) bexpr)
 
+let satisfying_exec o = List.exists (fun p -> check_outcome p.smap o)
+
 let pomsetpt (config, ast, outcomes) = 
-  let config = Util.default RunConfig.default_configuration config in
+  let config = Option.value ~default:RunConfig.default_configuration config in
   let vs = config.RunConfig.values in
-  let ps = interp vs (ASTToPomsetPT.convert_program ast) in
-  ignore @@ Util.maybe (List.iter (fun o ->
-    if not @@ List.exists (fun p -> check_outcome p.smap o) ps
-    then Printf.printf "F"
-    else Printf.printf "."
+  let ps = interp vs (ASTToPomsetPTSeq.convert_program ast) in
+  ignore @@ Option.map (List.iter (function
+    AST.Allowed _ as o ->
+      if satisfying_exec o ps
+      then Printf.printf "."
+      else Printf.printf "F"
+    | AST.Forbidden _ as o -> 
+      if not (satisfying_exec o ps)
+      then Printf.printf "."
+      else Printf.printf "F"
   )) outcomes;
   if !print_size
   then Printf.printf "%d pomsets\n" (List.length ps);
