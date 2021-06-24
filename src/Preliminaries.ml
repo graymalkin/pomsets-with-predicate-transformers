@@ -17,6 +17,9 @@ let fresh_register =
 type mem_ref = Ref of string
 [@@deriving show { with_path = false }]
 
+type quiescence = Qui of mem_ref
+[@@deriving show { with_path = false }]
+
 type expr = 
   V of value
 | R of register
@@ -44,6 +47,7 @@ type formula =
 | And of formula * formula
 | Or of formula * formula
 | Implies of formula * formula
+| Q of quiescence
 | True
 | False
 [@@deriving show { with_path = false }]
@@ -52,6 +56,7 @@ let rec formula_map fn = function
     Expr _ as leaf -> fn leaf
   | EqExpr _ as leaf -> fn leaf
   | EqVar _ as leaf -> fn leaf
+  | Q _ as leaf -> fn leaf
   | True as leaf -> fn leaf
   | False as leaf -> fn leaf
   | Not f -> Not (formula_map fn f)
@@ -69,6 +74,18 @@ let sub_reg e r =
 let sub_loc e l =
   formula_map (function
     | EqVar (l',e') when l = l' -> EqExpr (e,e')
+    | f -> f
+  )
+
+let sub_qui phi q =
+  formula_map (function
+    | Q q' when q = q' -> phi
+    | f -> f
+  )
+
+let sub_quis phi =
+  formula_map (function
+    | Q _ -> phi
     | f -> f
   )
 
@@ -131,6 +148,7 @@ let eval_entails f1 f2 =
     | True
     | Expr _
     | EqExpr _
+    | Q _
     | Not _ -> f3 
     | Or _ -> raise (Invalid_argument "argument has Or (DjytOl)")
     | Implies _ -> raise (Invalid_argument "argument has Implies (vQQNlT)")

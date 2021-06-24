@@ -343,7 +343,7 @@ let read_gen vs r x mode =
       empty_pomset with
       evs = [id];                                                   (* R1  *)
       lab = bind id (Read (mode, x, v)) empty_env;                  (* R2  *)
-      pre = (fun _ -> True);                                        (* unconstrained  *)
+      pre = bind id (Q (Qui x)) empty_env;                          (* R3  *)
       pt = (fun d f ->
         if List.mem id d (* E n D != empty *)
         then Implies (EqExpr (V v, R r), f)                         (* R4a *)
@@ -365,18 +365,21 @@ let write_gen vs x mode m =
   vs |> List.map (fun v ->
     let v = Val v in
     let id = fresh_id () in
-    { 
+    {
       empty_pomset with
       evs = [id];                                                   (* W1  *)
       lab = bind id (Write (mode, x, v)) empty_env;                 (* W2  *)
       pre = bind id (EqExpr (m, V v)) empty_env;                    (* W3  *)
-      pt = (fun _d f -> sub_loc m x f);                             (* W4  *)
+      pt = (fun _d f ->                                             (* W4a  *)
+           sub_loc m x f
+        |> sub_qui (And (EqExpr (m, V v), Q (Qui x))) (Qui x)
+      );
       term = EqExpr (m, V v);                                       (* W5a *)
     }
   ) <|> [
     {
       empty_pomset with 
-      pt = (fun _d f -> sub_loc m x f);                             (* W4  *)
+      pt = (fun _d f -> sub_loc m x f |> sub_qui False (Qui x));    (* W4b *)
       term = False                                                  (* W5b *)
     }
   ]
@@ -384,7 +387,7 @@ let write_gen vs x mode m =
 let complete p rf =
   List.for_all (fun e ->
         is_read (p.lab e) ==> List.exists (((=) e) <.> snd) rf      (* C2  *)
-    && tautology (p.pre e)                                          (* C3  *)
+    && tautology (sub_quis True @@ p.pre e)                         (* C3  *)
   ) p.evs
   && tautology p.term                                               (* C5  *)
 
