@@ -1,18 +1,18 @@
+module Pre = Preliminaries
 module P = PomsetPTSeq
-module F = Formula
 
 let convert_expr = function
-  AST.Number n -> F.V (F.Val n)
-| AST.Register r -> F.R (F.Reg r)
+  AST.Number n -> Pre.V (Pre.Val n)
+| AST.Register r -> Pre.R (Pre.Reg r)
 | _ -> raise (Invalid_argument "expression construct not supported by P (YnNjCW)")
 
 (* TODO: this is probably too limitted even for MVP *)
 let convert_bexpr = function
-  AST.Equality (e1, e2) -> F.Eq (convert_expr e1, convert_expr e2)
-| AST.Gt (e1, e2) -> F.Gt (convert_expr e1, convert_expr e2)
-| AST.Gte (e1, e2) -> F.Gte (convert_expr e1, convert_expr e2)
-| AST.Lt (e1, e2) -> F.Lt (convert_expr e1, convert_expr e2)
-| AST.Lte (e1, e2) -> F.Lte (convert_expr e1, convert_expr e2)
+  AST.Equality (e1, e2) -> Pre.Eq (convert_expr e1, convert_expr e2)
+| AST.Gt (e1, e2) -> Pre.Gt (convert_expr e1, convert_expr e2)
+| AST.Gte (e1, e2) -> Pre.Gte (convert_expr e1, convert_expr e2)
+| AST.Lt (e1, e2) -> Pre.Lt (convert_expr e1, convert_expr e2)
+| AST.Lte (e1, e2) -> Pre.Lte (convert_expr e1, convert_expr e2)
 | _ -> raise (Invalid_argument "binary expression not supported by P (2Yk1PK)")
 
 let convert_access_ordering = function
@@ -33,11 +33,11 @@ let rec convert_program = function
   AST.Skip ->
   P.Skip
 | AST.Assign (r, e) ->
-  P.Assign (F.Reg r, convert_expr e)
+  P.Assign (Pre.Reg r, convert_expr e)
 | AST.Load (r, g, o, _e) ->
-  P.Load (F.Reg r, F.Ref g, convert_access_ordering o)
+  P.Load (Pre.Reg r, Pre.Ref g, convert_access_ordering o)
 | AST.Store (g, e, o, _rmw) ->
-  P.Store (F.Ref g, convert_access_ordering o, convert_expr e)
+  P.Store (Pre.Ref g, convert_access_ordering o, convert_expr e)
 | AST.Conditional (be, pt, pf) ->
   P.Ite (convert_bexpr be, convert_program pt, convert_program pf)
 | AST.Sequence (p1, p2) -> P.Sequence (convert_program p1, convert_program p2)

@@ -1,9 +1,9 @@
 open OUnit2
 
+open Preliminaries
 open PomsetPT
 open Relation
 open Util
-open Formula
 
 let test_gen_rf_candidates_empty _ =
   assert_equal [[]] (gen_rf_candidates empty_pomset)

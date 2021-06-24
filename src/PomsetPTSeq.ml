@@ -5,18 +5,12 @@
   Definitions are approximately in the order introduced from the paper.
  *)
 
+open Preliminaries
 open Relation
 open Util
-open Formula
 
-(** Preliminaries *)
 type mode = Rlx | Rel | Acq | SC
 [@@deriving show { with_path = false }]
-
-let fresh_register =
-  let reg_id = ref 0 in
-  function () ->
-    incr reg_id; Reg ("s_" ^ (string_of_int !reg_id))
 
 type grammar = 
   Assign of register * expr

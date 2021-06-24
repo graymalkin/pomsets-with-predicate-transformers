@@ -3,8 +3,8 @@
   pomsetpt takes the output of the parser and runs the pomsetpt semantics over it.
  *)
 
+open Preliminaries
 open PomsetPTSeq
-open Formula
 
 let print_latex = ref false
 let print_size = ref false

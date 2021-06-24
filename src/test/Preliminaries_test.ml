@@ -1,6 +1,6 @@
 open OUnit2
 
-open Formula
+open Preliminaries
 
 let p = True
 let q = True

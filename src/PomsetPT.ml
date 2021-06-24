@@ -5,11 +5,9 @@
   Definitions are approximately in the order introduced from the paper.
  *)
 
+open Preliminaries
 open Relation
 open Util
-open Formula
-
-(** Preliminaries *)
 
 type amode = Rlx | RA | SC
 [@@deriving show { with_path = false }]
