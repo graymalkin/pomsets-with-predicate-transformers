@@ -9,6 +9,8 @@ open Preliminaries
 open Relation
 open Util
 
+(** Preliminaries *)
+(* These prelims are specialised for the sequential version of the semantics. *)
 type mode = Rlx | Rel | Acq | SC
 [@@deriving show { with_path = false }]
 
@@ -27,12 +29,6 @@ let rec pp_grammar fmt = function
   | Skip -> Format.fprintf fmt "skip"
   | Sequence (p1, p2) -> Format.fprintf fmt "%a; %a" pp_grammar p1 pp_grammar p2
   | Ite (e, p1, p2) -> Format.fprintf fmt "if(%a) { %a } else { %a }" pp_expr e pp_grammar p1 pp_grammar p2
-
-type event = int
-
-
-let tautology f = eval_entails True f
-let unsatisfiable f = eval_entails f False
 
 type action =
   Write of mode * mem_ref * value

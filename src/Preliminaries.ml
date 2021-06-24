@@ -1,6 +1,8 @@
 open Util
 open Relation
 
+type event = int
+
 type value = Val of int
 [@@deriving show { with_path = false }]
 
@@ -139,3 +141,5 @@ let eval_entails f1 f2 =
   in
   eval_dnf (convert_dnf f1)
 
+let tautology f = eval_entails True f
+let unsatisfiable f = eval_entails f False
