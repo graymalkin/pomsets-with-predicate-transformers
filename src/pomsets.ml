@@ -4,6 +4,7 @@
  *)
 
 open PomsetPTSeq
+open Formula
 
 let print_latex = ref false
 let print_size = ref false

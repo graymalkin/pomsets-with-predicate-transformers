@@ -1,5 +1,6 @@
 open OUnit2
 
+open Formula_test
 open Relation_test
 open PomsetPT_test
 

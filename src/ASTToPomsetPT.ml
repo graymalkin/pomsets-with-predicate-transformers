@@ -1,15 +1,15 @@
 let convert_expr = function
-  AST.Number n -> PomsetPT.V (PomsetPT.Val n)
-| AST.Register r -> PomsetPT.R (PomsetPT.Reg r)
+  AST.Number n -> Formula.V (Formula.Val n)
+| AST.Register r -> Formula.R (Formula.Reg r)
 | _ -> raise (Invalid_argument "expression construct not supported by PomsetPT (YnNjCW)")
 
 (* TODO: this is probably too limitted even for MVP *)
 let convert_bexpr = function
-  AST.Equality (e1, e2) -> PomsetPT.Eq (convert_expr e1, convert_expr e2)
-| AST.Gt (e1, e2) -> PomsetPT.Gt (convert_expr e1, convert_expr e2)
-| AST.Gte (e1, e2) -> PomsetPT.Gte (convert_expr e1, convert_expr e2)
-| AST.Lt (e1, e2) -> PomsetPT.Lt (convert_expr e1, convert_expr e2)
-| AST.Lte (e1, e2) -> PomsetPT.Lte (convert_expr e1, convert_expr e2)
+  AST.Equality (e1, e2) -> Formula.Eq (convert_expr e1, convert_expr e2)
+| AST.Gt (e1, e2) -> Formula.Gt (convert_expr e1, convert_expr e2)
+| AST.Gte (e1, e2) -> Formula.Gte (convert_expr e1, convert_expr e2)
+| AST.Lt (e1, e2) -> Formula.Lt (convert_expr e1, convert_expr e2)
+| AST.Lte (e1, e2) -> Formula.Lte (convert_expr e1, convert_expr e2)
 | _ -> raise (Invalid_argument "binary expression not supported by PomsetPT (2Yk1PK)")
 
 let convert_access_ordering = function
@@ -30,11 +30,11 @@ let rec convert_program = function
   AST.Skip ->
   PomsetPT.Skip
 | AST.Assign (r, e) ->
-  PomsetPT.Assign (PomsetPT.Reg r, convert_expr e)
+  PomsetPT.Assign (Formula.Reg r, convert_expr e)
 | AST.Load (r, g, o, _e) ->
-  PomsetPT.Load (PomsetPT.Reg r, PomsetPT.Ref g, convert_access_ordering o)
+  PomsetPT.Load (Formula.Reg r, Formula.Ref g, convert_access_ordering o)
 | AST.Store (g, e, o, _rmw) ->
-  PomsetPT.Store (PomsetPT.Ref g, convert_access_ordering o, convert_expr e)
+  PomsetPT.Store (Formula.Ref g, convert_access_ordering o, convert_expr e)
 | AST.Fence o -> PomsetPT.FenceStmt (convert_fence_ordering o)
 | AST.Conditional (be, pt, pf) ->
   PomsetPT.Ite (convert_bexpr be, convert_program pt, convert_program pf)
