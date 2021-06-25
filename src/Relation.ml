@@ -78,20 +78,21 @@ let seq = rel_sequence
 let rel_invert r = List.map (fun (a, b) -> (b, a)) r
 let inv = rel_invert
 
-let injective d r =
-  List.for_all (fun x ->
-    List.length (List.filter (fun (x', _) -> x = x') r) <= 1
-  ) d &&
+let injective r =
   List.for_all (fun (_, b) ->
     List.length (List.filter (fun (_, b') -> b = b') r) <= 1
+  ) r &&
+  List.for_all (fun (a, _) ->
+    List.length (List.filter (fun (a', _) -> a = a') r) <= 1
   ) r
+
 
 let surjective cd r = 
   List.for_all (fun x ->
     List.exists (fun (_, x') -> x = x') r
   ) cd
 
-let bijection d cd r = injective d r && surjective cd r
+let bijection _d cd r = injective r && surjective cd r
 
 let subset eq a b =
   let cmp a b = if eq a b then 0 else 1 in

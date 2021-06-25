@@ -2,10 +2,10 @@ open OUnit2
 
 open Preliminaries
 
-let p = True
-let q = True
-let r = True
-let s = True
+let p = True ""
+let q = True ""
+let r = True ""
+let s = True ""
 
 let input1 = And (Or (p, q), Or (r, s))
 let expect1 = Or (
@@ -35,7 +35,7 @@ let test_convert_dnf2 _ =
   assert_equal input2 (convert_dnf input2)
 
 
-let false_f = False
+let false_f = False ""
 let some_f = EqExpr (V (Val 1), V (Val 2))
 
 let test_eval_entails_lhs_false _ = assert_equal true (eval_entails false_f some_f)

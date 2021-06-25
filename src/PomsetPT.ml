@@ -173,7 +173,7 @@ let empty_pomset = {
   lab = empty_env;
   pre = empty_env;
   pt = (fun _ps f -> f);
-  term = True;
+  term = (True "empty pomset term (gHOD5k)");
   rf = [];
   ord = [];
   smap = empty_env
@@ -192,7 +192,7 @@ let wf_pt _p = true
 
 (* M6 *)
 let wf_rf p =
-     injective p.evs p.rf
+     injective p.rf
   && List.for_all (uncurry (matches <..> p.lab)) p.rf
 
 (* M7 *)
@@ -406,11 +406,11 @@ let fence_gen mode =
       empty_pomset with
       evs = [id];                                                   (* F1  *)
       lab = bind id (Fence (mode)) empty_env;                       (* F2  *)
-      pre = bind id True empty_env;                                 (* unconstrained *)
+      pre = bind id (True "fence pre (0jzrOk)") empty_env;                                 (* unconstrained *)
       pt = (fun _d f -> f);                                         (* F4  *)
-      term = True;                                                  (* unconstrained *)
+      term = (True "fence term (cI1WyR)");                                                  (* unconstrained *)
     }
-  ] <|> [{empty_pomset with term = False}]                          (* F5 *)
+  ] <|> [{empty_pomset with term = (False "fence term (MyePCl)")}]                          (* F5 *)
 
 let fence_filter ps = ps
 
@@ -423,20 +423,20 @@ let read_gen vs r x mode =
       empty_pomset with
       evs = [id];                                                   (* R1  *)
       lab = bind id (Read (mode, x, v)) empty_env;                  (* R2  *)
-      pre = (fun _ -> True);                                        (* unconstrained  *)
+      pre = (fun _ -> True "");                                        (* unconstrained  *)
       pt = (fun d f ->
         if List.mem id d (* E n D != empty *)
         then Implies (EqExpr (V v, R r), f)                         (* R4a *)
         else Implies (Or (EqExpr (V v, R r), EqVar (x, R r)), f)    (* R4b *)
       );
-      term = True;                                                  (* unconstrained *)
+      term = True "";                                                  (* unconstrained *)
       smap = bind r v empty_pomset.smap;
     }
   ) <|> [
     {
       empty_pomset with
       pt = (fun _d f -> f);                                         (* R4c *)
-      term = if mode <> Rlx then False else True;                   (* R5 *)
+      term = if mode <> Rlx then (False "r5 (Xul93d)") else (True "r5 (vXImh9)");                   (* R5 *)
     }
   ]
 
@@ -459,7 +459,7 @@ let write_gen vs x mode m =
     {
       empty_pomset with 
       pt = (fun _d f -> sub_loc m x f);                             (* W4  *)
-      term = False                                                  (* W5b *)
+      term = False "w5b"                                                  (* W5b *)
     }
   ]
 

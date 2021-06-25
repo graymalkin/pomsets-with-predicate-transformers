@@ -62,9 +62,9 @@ let test_sequence _ =
   assert_bool "" (not (List.mem (1,4) (rel_sequence [(1,2)] [(2,3); (3,4)])))
 
 let test_injective _ =
-  assert_bool "a" (injective [1;2;3] [(1,D); (2, B); (3, A)]);
-  assert_bool "b" (injective [1;2;3;4] [(1,D); (2, B); (3, C); (4, A)]);
-  assert_bool "c" (not @@ injective [1;2;3;4] [(1,D); (2, B); (3, C); (4, C)])
+  assert_bool "a" (injective [(1,D); (2, B); (3, A)]);
+  assert_bool "b" (injective [(1,D); (2, B); (3, C); (4, A)]);
+  assert_bool "c" (not @@ injective [(1,D); (2, B); (3, C); (4, C)])
 
 let test_surjective _ =
   assert_bool "d" (surjective [A; B; C; D] [(1,D); (2, B); (3, C); (4, A)]);
