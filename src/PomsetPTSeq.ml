@@ -145,19 +145,35 @@ type pomsetPT = {
 }
 
 (** Pomset Utils *)
-let eqr_to_mapping eqr =
-  function e -> 
-    try List.assoc e eqr
+let relabel eqr ps =
+  let fwd = function e -> 
+    let r = try List.assoc e eqr
     with Not_found -> e
-
-let relabel f ps =
+    in
+    debug "[old %d] -> [new %d]\n" e r; r
+  in
+  let rev = function e -> 
+    let r = try List.assoc e (List.map (fun (a,b) -> (b,a)) eqr)
+    with Not_found -> e
+    in
+    debug "[new %d] -> [old %d]\n" e r; r
+  in
   { 
-    evs = List.map f ps.evs;
-    lab = (fun e -> ps.lab (f e));
-    pre = (fun e -> ps.pre (f e));
-    pt = (fun d form -> ps.pt (List.map f d) form);
+    evs = List.map fwd ps.evs;
+    lab = (fun e -> ps.lab (rev e));
+    pre = (fun e -> 
+      List.iter (fun e' -> try debug "pre(%d) %a\n%!" e' pp_formula (ps.pre e') with Not_found -> ()) [1;2;3;4;5];
+      try
+        let e' = rev e in
+        debug "pre([%d -> %d]) =%!" e e';
+        let r = ps.pre e' in
+        debug "%a\n" pp_formula r;
+        r
+      with Not_found -> failwith "panic"
+    );
+    pt = (fun d phi -> ps.pt (List.map fwd d) phi);
     term = ps.term;
-    ord = List.map (fun (l, r) -> f l, f r) ps.ord;
+    ord = List.map (fun (l, r) -> fwd l, fwd r) ps.ord;
     smap =  ps.smap
   }
 
@@ -185,8 +201,11 @@ let pp_action fmt = function
 | Fence m -> Format.fprintf fmt "F(%a)" pp_mode m
 
 let pp_pomset fmt p = 
+  Format.fprintf fmt "Events: %a\n" (pp_set pp_int) p.evs;
   List.iter (fun e ->
-    Format.fprintf fmt "%d : [%a | %a]\n" e pp_formula (p.pre e) pp_action (p.lab e)
+    Format.fprintf fmt "%d : [%a | %a]\n" e 
+      pp_formula (try p.pre e with Not_found -> debug "can't pre %d (zCg7xg)\n" e; False "zCg7xg") 
+      pp_action (p.lab e)
   ) p.evs;
   Format.fprintf fmt "ord: %a\n" (PPRelation.pp_relation pp_int pp_int) p.ord;
   Format.fprintf fmt "\n"
@@ -223,8 +242,9 @@ let wf_pomset rf p =
   && wf_pre p
   && wf_pt p
   && wf_rf rf p
-  && wf_ord rf p in
-  (* debug "%s %a\n" (if wf then "good" else "bad") pp_pomset p; *)
+  && wf_ord rf p 
+  in
+  debug "%s %a\n" (if wf then "good" else "bad") pp_pomset p;
   wf
 
 let top_level rf p =
@@ -258,53 +278,83 @@ let pomsets_seq_gen ps1 ps2 =
       in
 
       eqrs |> List.map (fun eqr ->
-        let p1 = relabel (eqr_to_mapping eqr) p1 in 
-        let lab_new = join_env p1.lab p2.lab in
+        let freshened_eqr = List.map (fun eq -> (fresh_id (), eq)) eqr in
+        let evs_new = List.fold_left (fun acc (c, (a,b)) ->
+            c :: (acc <-> [a;b])
+          ) (p1.evs <|> p2.evs) freshened_eqr
+        in
+        let lab_new c = 
+          if (List.exists (fun (c', _) -> c=c') freshened_eqr)
+          then (fun (a, _) -> p1.lab a) (List.assoc c freshened_eqr) 
+          else (
+            (* Check for belt and braces, this labelling funciton should never be 
+               called with old event ids *)
+            if (List.exists (fun (_, (a, b)) -> a = c || b = c) freshened_eqr)
+            then raise (Invalid_argument "panic (HAPtst)")
+            else join_env p1.lab p2.lab c
+          )
+        in
+
+        let ord_new = List.fold_left (fun acc (c,(a,b)) ->
+            List.map (fun (a', b') ->
+              let na = if a = a' then c else a' in
+              let nb = if b = b' then c else b' in
+              (na, nb)
+            ) acc
+          ) (p1.ord <|> p2.ord) freshened_eqr 
+        in
 
         (* TODO: This misses rules i3a-c, and might generate down-useful events which are
             incompatible with dep. *)
-        let down_useful = List.filter (is_write <.> lab_new) (p1.evs <|> p2.evs) in
+        let down_useful = List.filter (is_write <.> lab_new) (evs_new) in
 
         let down_useful = powerset down_useful 
           |> List.map (fun du -> cross du du)
-          |> List.filter (fun du -> partial_order (p1.ord <|> p2.ord <|> du))
+          |> List.filter (fun du -> partial_order (ord_new <|> du))
         in
+
+        let pt_map1 e = try fst (List.assoc e freshened_eqr) with Not_found -> e in
+        let pt_map2 e = try snd (List.assoc e freshened_eqr) with Not_found -> e in
 
         down_useful |> List.map (fun du -> 
           (* Note: this is an over-approximation of the read sets. If we could inspect the predicate
           transformers then we could generate a precise set of reads which could "interfere" with c 
           in the definition of down. *)
-          let read_sets = powerset (List.filter (is_read <.> lab_new) (p1.evs <|> p2.evs)) in
+          let read_sets = powerset (List.filter (is_read <.> lab_new) evs_new) in
           read_sets |> List.map (fun rs ->
-            let ord' = p1.ord <|> p2.ord <|> du in
-            let down e = List.find_all (fun c -> List.mem (c, e) ord' && c <> e) rs in
+            let down e = List.find_all (fun c -> List.mem (c, e) du && c <> e) rs in
             (* TODO: Confirm with James that p1.evs is a good index for the use of the predicate
                transformer *)
             let k2' e =
               if is_read (lab_new e) 
-              then p1.pt p1.evs (p2.pre e)
-              else p1.pt (down e) (p2.pre e)
+              then p1.pt (List.map pt_map1 p1.evs) (p2.pre (pt_map2 e))
+              else p1.pt (down e) (p2.pre (pt_map2 e))
             in
-            let pre1 e = if is_release (lab_new e) then p1.term else (True "pre1 (PjcvHT)") in
+            let tick1 e = if is_release (lab_new e) then p1.term else (True "tick1 (PjcvHT)") in
 
             (* eqr is used to map ids from p1 into ids to p2 to generate merge opportunities *)
             {
-              evs = p1.evs <|> p2.evs;                              (* S1  *)
+              evs = evs_new;                                        (* S1  *)
               lab = lab_new;                                        (* S2  *)
 
               pre = (fun e ->
-                if List.mem e p1.evs && List.mem e p2.evs
-                then And (Or (p1.pre e, k2' e), pre1 e)             (* S3c *)
+                assert (not (List.exists (fun (_, (a, b)) -> a = e || b = e) freshened_eqr));
+                if List.mem e (List.map fst freshened_eqr)
+                then And (Or (p1.pre (pt_map1 e), k2' e), tick1 e)             (* S3c *)
                 else (
-                  if List.mem e (p1.evs <-> p2.evs)
-                  then p1.pre e                                     (* S3a *)
-                  else And (k2' e, pre1 e)                          (* S3b *)
+                  if List.mem e p1.evs
+                  then p1.pre e                                      (* S3a *)
+                  else And (k2' e, tick1 e)                          (* S3b *)
                 )
               );
 
-              pt = (fun d f -> p1.pt d (p2.pt d f));                (* S4  *)
+              pt = (fun d f ->                                      (* S4  *)
+                p1.pt (List.map pt_map1 d) (p2.pt (List.map pt_map2 d) f)
+              );
+
+              (* TODO: confirm that this is E_1 and not E (i.e. events from E1 and E2) *)
               term = And (p1.term, p1.pt p1.evs p2.term);           (* S5  *)
-              ord = ord';                                           (* S6  *)
+              ord = ord_new;                                        (* S6  *)
 
               (* It is important that we look in the second environment first *)
               smap = join_env p2.smap p1.smap;
@@ -322,9 +372,12 @@ let if_gen cond ps1 ps2 =
       ) (pairings p1.evs p2.evs) 
     in
     eqrs |> List.map (fun eqr ->
-      let p1 = relabel (eqr_to_mapping eqr) p1 in 
+      let p1 = relabel eqr p1 in 
+      let p2 = relabel eqr p2 in 
+      let new_evs = p1.evs <|> p2.evs in
+      let new_ord = rtc new_evs (p1.ord <|> p2.ord) in              (* M6  *)
       {
-        evs = p1.evs <|> p2.evs;                                    (* I1  *)
+        evs = new_evs;                                              (* I1  *)
         lab = join_env p1.lab p2.lab;                               (* I2  *)
 
         pre = (fun e ->
@@ -348,7 +401,7 @@ let if_gen cond ps1 ps2 =
         );
         
         term = Or (And (cond, p1.term), And (Not cond, p2.term));   (* I5  *)
-        ord = p1.ord <|> p2.ord;                                    (* I6  *)
+        ord = new_ord;                                              (* I6  *)
 
         (* It is important that we look in the second environment first *)
         smap = join_env p2.smap p1.smap;
@@ -392,7 +445,8 @@ let write_gen vs x mode m =
   vs |> List.map (fun v ->
     let v = Val v in
     let id = fresh_id () in
-    info "Building pomset with %a... \n" pp_action (Write (mode, x, v));
+    info "Building pomset with %d : [ %a | %a ] \n" id pp_formula (EqExpr (m, V v)) pp_action (Write (mode, x, v));
+    info "termination: %a \n" pp_formula (EqExpr (m, V v));
     {
       empty_pomset with
       evs = [id];                                                   (* W1  *)
@@ -417,15 +471,24 @@ let complete rf p =
   let r = List.for_all (fun e ->
     let ea = try p.lab e with Not_found -> failwith "p.lab e (OuL8Qi)" in
     let ep = try p.pre e with Not_found -> failwith "p.pre e (ehFYkc)" in
-    
-       is_read ea ==> List.exists (fun (_,e') -> e = e') rf       (* C2  *)
-    && try tautology (sub_quis (True "C3 (YewLUb)") ep)                         (* C3  *)
-    with Not_found -> Debug.debug "offending formula: %a\n" pp_formula (sub_quis (True "C3 (YewLUb)") ep ); failwith "panic"
+    is_read ea ==> List.exists (fun (_,e') -> e = e') rf       (* C2  *)
+    && 
+    (
+      try
+        tautology (sub_quis (True "C3 (YewLUb)") ep)                         (* C3  *)
+      with
+        Not_found -> Debug.debug "offending formula: %a (Db469u)\n" 
+                    pp_formula (sub_quis (True "C3 (YewLUb)") ep ); 
+                    failwith "panic"
+    )
   ) p.evs
   in
   if r then Debug.debug "%a\n" pp_formula p.term;
   r
-  && tautology p.term                                               (* C5  *)
+  && try
+    tautology p.term                                               (* C5  *)
+    with Not_found ->
+    Debug.debug "offending formula: %a (vbgIHa)\n" pp_formula p.term; failwith "panic"
 
 let gen_rf_candidates p =
   let reads = List.filter (is_read <.> p.lab) p.evs in
@@ -444,23 +507,25 @@ let gen_rf_candidates p =
   in
   big_union (List.map powerset (BatList.n_cartesian_product wr_sloc_sval))
 
-let grow_pomset rf p =
+(* This is suspicious. Why are we making a new pomset for each rf edge? Shouldn't there be some   
+   combinatorial thing? *)
+(* This function assumes that rf is _not_ empty. *)
+let grow_pomset (rf : (event * event) list) p =
   (* M7 *)
-  let ps = List.fold_left (fun acc (d,e) ->
-    let blockers = List.filter (fun c -> (blocks <..> p.lab) c e) p.evs in
-    let blockers = List.map (fun c -> (c,d), (e,c)) blockers in
-    let blockers_l, blockers_r = List.split blockers in
-    let block_choices = BatList.n_cartesian_product [blockers_l;blockers_r] in
-    { p with ord = (d,e) :: p.ord @ rf } :: { p with ord = (e,d) :: p.ord @ rf } ::
-    (List.fold_left (fun acc bc -> 
-      { p with ord = (d,e) :: bc @ p.ord @ rf } :: { p with ord = (e,d) :: bc @ p.ord @ rf } :: acc
-    ) [] block_choices) 
-    @ acc
-  ) [] rf
+  (* M7a holds by construction of rf *)
+  let m7b = List.fold_left (fun ps (d,e) -> 
+      let blockers = List.filter (fun c -> blocks (p.lab c) (p.lab e)) p.evs in
+      let blockers = List.map (fun c -> (c,d), (e,c)) blockers in
+      List.fold_left (fun ps (lord, rord) -> 
+        List.flatten @@ List.map (fun p ->
+          [{ p with ord = lord :: p.ord }; { p with ord = rord :: p.ord }]
+        ) ps
+      ) ps blockers
+    ) [p] rf
   in
-  List.map (fun p ->
-    { p with ord = rtc p.evs p.ord }
-  ) ps
+  let m7c = List.map (fun p -> { p with ord = rtc p.evs (rf @ p.ord) }) m7b in
+  m7c
+
 
 let interp vs prog = 
   let rec go vs = function
@@ -472,14 +537,20 @@ let interp vs prog =
   (* Note: we expect e to be a binary expr. We do not coerce as is expected in the paper. *)
   | Ite (e, p1, p2) -> if_gen (Expr e) (go vs p1) (go vs p2)
   in
+  let r = (go vs prog) in
+  debug "%d pomsets to filter\n" (List.length r);
+  List.iter (debug "%a\n" pp_pomset) r;
   let ps = List.fold_left (fun acc p ->
       let rfs = gen_rf_candidates p in
+      debug "%d rf candidates\n" (List.length rfs);
       List.fold_left (fun acc rf ->
-        let new_ps = grow_pomset rf p in
+        let new_ps = if rf <> [] then grow_pomset rf p else [p] in
+        debug "%d new_ps\n" (List.length new_ps);
         List.map (fun p -> rf, p) new_ps @ acc
       ) [] rfs @ acc
-    ) [] (go vs prog)
+    ) [] r
   in
+  debug "checking %d pomsets...\n" (List.length ps);
   let good_pomsets = List.filter (uncurry wf_pomset) ps in
   let good_pomsets = List.filter (uncurry complete) good_pomsets in
   List.map snd good_pomsets

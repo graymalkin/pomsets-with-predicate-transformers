@@ -53,6 +53,8 @@ let y_is n = EqVar (Ref "y", V (Val n))
 let x_is_one_and_y_is_one = And (x_is 1, y_is 1)
                           
 let test_eval_entails_xy_one_is_one _ = assert_equal true (eval_entails x_is_one_and_y_is_one x_is_one)
+
+let test_eq_expr _ = assert_equal true (eval_entails (EqExpr ((V (Val 1), (V (Val 1))))) (True ""))
                                           
 let pomset_pt_formula_suite =
   "PomsetPT formula operations" >::: [
@@ -63,5 +65,6 @@ let pomset_pt_formula_suite =
   ; "test_eval_entails_one_is_one" >:: test_eval_entails_one_is_one
   ; "test_eval_entails_one_or_two_is_one" >:: test_eval_entails_one_or_two_is_one
   ; "test_eval_entails_xy_one_is_one" >:: test_eval_entails_xy_one_is_one
+  ; "test_eq_expr" >:: test_eq_expr
   ]
 
