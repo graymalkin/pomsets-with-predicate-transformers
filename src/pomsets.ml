@@ -22,21 +22,21 @@ let check = function
   r
 )
 
-let pomsetpt (config, ast, outcomes) = 
+let pomsetpt (config, ast, _outcomes) = 
   let config = Option.value ~default:RunConfig.default_configuration config in
   let vs = config.RunConfig.values in
   let ps = interp vs (ASTToPomsetPTSeq.convert_program ast) in
-  ignore @@ Option.map (List.iter (function
+  (* ignore @@ Option.map (List.iter (function
       (AST.Allowed (_b,_os,c) as o)
     | (AST.Forbidden (_b,_os,c) as o) -> 
       ignore @@ Option.map (Format.printf "%s") c;
       if check o ps
       then Format.printf " (pass)\n"
       else Format.printf " (fail)\n"
-  )) outcomes;
+  )) outcomes; *)
   Format.print_newline ();
   if !print_size then Format.printf "%d pomsets\n" (List.length ps);
-  if !print_latex then PrintLatexDoc.pp_document Format.std_formatter config ast [];
+  if !print_latex then PrintLatexDoc.pp_document Format.std_formatter config ast LatexPomsetPTSeq.pp_pomset ps;
   if !print_time then Format.printf "Execution time: %fs\n" (Sys.time ());
   ()
 

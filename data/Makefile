@@ -3,8 +3,10 @@ OPTIONS = --tex
 TEX_OPTIONS = --interaction=batchmode
 PREAMBLE = ./latex-template/preamble.tex
 
-PROGRAMS = $(wildcard tests/paper-examples/*.lit) \
-	$(wildcard tests/jctc/*.lit)
+PROGRAMS = $(wildcard tests/*.lit)
+	# $(wildcard tests/paper-examples/*.lit) \
+	# $(wildcard tests/jctc/*.lit) 
+
 TEX_SOURCES = $(shell echo $(patsubst %.lit,diagrams/%.tex,$(PROGRAMS)) | tr ' ' '\n' | sort -V)
 DIAGRAMS = $(shell echo $(patsubst %.lit,diagrams/%.pdf,$(PROGRAMS)) | tr ' ' '\n' | sort -V)
 
