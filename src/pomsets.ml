@@ -26,7 +26,6 @@ let pomsetpt (config, ast, outcomes) =
   let config = Option.value ~default:RunConfig.default_configuration config in
   let vs = config.RunConfig.values in
   let ps = interp vs (ASTToPomsetPTSeq.convert_program ast) in
-  List.iter (Debug.debug "%a \n\n" pp_pomset) ps;
   ignore @@ Option.map (List.iter (function
       (AST.Allowed (_b,_os,c) as o)
     | (AST.Forbidden (_b,_os,c) as o) -> 

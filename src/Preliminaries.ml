@@ -47,15 +47,6 @@ let rec pp_expr fmt = function
 | Lt (e1, e2) -> Format.fprintf fmt "(%a < %a)" pp_expr e1 pp_expr e2
 | Lte (e1, e2) -> Format.fprintf fmt "(%a <= %a)" pp_expr e1 pp_expr e2
 
-let rec eval_expr env = function
-    V (Val v) -> v
-  | R (Reg r) -> env r
-  | Eq (e1, e2) -> if (eval_expr env e1 = eval_expr env e2) then 1 else 0
-  | Gte (e1, e2) -> if (eval_expr env e1 >= eval_expr env e2) then 1 else 0
-  | Gt (e1, e2) -> if (eval_expr env e1 > eval_expr env e2) then 1 else 0
-  | Lte (e1, e2) -> if (eval_expr env e1 <= eval_expr env e2) then 1 else 0
-  | Lt (e1, e2) -> if (eval_expr env e1 < eval_expr env e2) then 1 else 0
-
 type formula =
   Expr of expr
 | EqExpr of expr * expr
@@ -65,21 +56,21 @@ type formula =
 | Or of formula * formula
 | Implies of formula * formula
 | Q of quiescence
-| True of string
-| False of string
+| True
+| False
 [@@deriving show { with_path = false }]
 
 let rec pp_formula fmt = function
-  Expr e -> Format.fprintf fmt "(%a)" pp_expr e
+  Expr e -> Format.fprintf fmt "%a" pp_expr e
 | EqExpr (e1, e2) -> Format.fprintf fmt "(%a = %a)" pp_expr e1 pp_expr e2
 | EqVar (x, e) -> Format.fprintf fmt "(%a = %a)" pp_mem_ref x pp_expr e
-| Not f -> Format.fprintf fmt "~(%a)" pp_formula f
-| And (f1, f2) -> Format.fprintf fmt "%a && %a" pp_formula f1 pp_formula f2
-| Or (f1, f2) -> Format.fprintf fmt "%a || %a" pp_formula f1 pp_formula f2
+| Not f -> Format.fprintf fmt "~%a" pp_formula f
+| And (f1, f2) -> Format.fprintf fmt "(%a) && (%a)" pp_formula f1 pp_formula f2
+| Or (f1, f2) -> Format.fprintf fmt "(%a || %a)" pp_formula f1 pp_formula f2
 | Implies (f1, f2) -> Format.fprintf fmt "(%a ==> %a)" pp_formula f1 pp_formula f2
 | Q q -> Format.fprintf fmt "Q(%a)" pp_quiescence q
-| True loc -> Format.fprintf fmt "tt(%s)" loc
-| False loc -> Format.fprintf fmt "ff(%s)" loc
+| True -> Format.fprintf fmt "tt"
+| False -> Format.fprintf fmt "ff"
 
 
 let rec formula_map fn = function
@@ -87,8 +78,8 @@ let rec formula_map fn = function
   | EqExpr _ as leaf -> fn leaf
   | EqVar _ as leaf -> fn leaf
   | Q _ as leaf -> fn leaf
-  | True _ as leaf -> fn leaf
-  | False _ as leaf -> fn leaf
+  | True as leaf -> fn leaf
+  | False as leaf -> fn leaf
   | Not f -> Not (formula_map fn f)
   | And (f1, f2) -> And (formula_map fn f1, formula_map fn f2)
   | Or (f1, f2) -> Or (formula_map fn f1, formula_map fn f2)
@@ -119,14 +110,91 @@ let sub_quis phi =
     | f -> f
   )
 
-let rec eval_formula = function
-  | EqExpr (e,e') -> eval_expr empty_env e = eval_expr empty_env e'
-  | Expr e -> eval_expr empty_env e <> 0
-  | Not f -> not (eval_formula f)
-  | And (f,f') -> (eval_formula f) && (eval_formula f')
-  | Or (f,f') -> (eval_formula f) || (eval_formula f')
-  | True _ -> true
-  | _ -> false
+open Z3
+open Z3.Solver
+open Z3.Arithmetic
+open Z3.Boolean
+
+let rec expr_to_z3 ctx rmap = 
+  function
+    V (Val v) -> Integer.mk_numeral_i ctx v, rmap
+  | R (Reg r) -> 
+    (
+      match List.assoc_opt r rmap with
+        Some c -> c, rmap
+      | None ->
+        let rvar = Integer.mk_const_s ctx r in
+        rvar, ((r, rvar) :: rmap)
+    )
+  | Eq (e1, e2) -> 
+    let el, rmapl = expr_to_z3 ctx rmap e1 in
+    let er, rmapr = expr_to_z3 ctx rmapl e2 in
+    mk_eq ctx el er, rmapr
+  | Gt (e1,e2) ->  
+    let el, rmapl = expr_to_z3 ctx rmap e1 in
+    let er, rmapr = expr_to_z3 ctx rmapl e2 in
+    mk_gt ctx el er, rmapr
+  | Gte (e1,e2) -> 
+    let el, rmapl = expr_to_z3 ctx rmap e1 in
+    let er, rmapr = expr_to_z3 ctx rmapl e2 in
+    mk_ge ctx el er, rmapr
+  | Lt (e1,e2) -> 
+    let el, rmapl = expr_to_z3 ctx rmap e1 in
+    let er, rmapr = expr_to_z3 ctx rmapl e2 in
+    mk_lt ctx el er, rmapr
+  | Lte (e1,e2) -> 
+    let el, rmapl = expr_to_z3 ctx rmap e1 in
+    let er, rmapr = expr_to_z3 ctx rmapl e2 in
+    mk_le ctx el er, rmapr
+
+let rec formula_to_z3 ctx rmap = function
+  And (f1, f2) -> 
+    let l, rmapl = formula_to_z3 ctx rmap f1 in
+    let r, rmapr = formula_to_z3 ctx rmapl f2 in
+    mk_and ctx [l; r], rmapr
+| Or (f1, f2) -> 
+    let l, rmapl = formula_to_z3 ctx rmap f1 in
+    let r, rmapr = formula_to_z3 ctx rmapl f2 in
+    mk_or ctx [l; r], rmapr
+| Implies (f1, f2) -> 
+    let l, rmapl = formula_to_z3 ctx rmap f1 in
+    let r, rmapr = formula_to_z3 ctx rmapl f2 in
+    mk_implies ctx l r, rmapr
+| Expr (Eq (e1, e2))
+| EqExpr (e1, e2) -> 
+  let el, rmapl = expr_to_z3 ctx rmap e1 in
+  let er, rmapr = expr_to_z3 ctx rmapl e2 in
+  mk_eq ctx el er, rmapr
+| True -> mk_true ctx, rmap
+| False -> mk_false ctx, rmap
+| Not f -> 
+  let fr, rmapf = formula_to_z3 ctx rmap f in
+  mk_not ctx fr, rmapf
+| EqVar (Ref x, e) -> 
+  (
+      match List.assoc_opt x rmap with
+        Some c -> c, rmap
+      | None ->
+        let rvar = Integer.mk_const_s ctx x in
+        let ef,rmapr = expr_to_z3 ctx rmap e in
+        mk_eq ctx rvar ef, ((x, rvar) :: rmapr)
+  )
+| Expr _ -> raise (Invalid_argument "Bare expr in formula (ryCwKF)")
+| Q _ -> raise (Invalid_argument "Qx construction in formula (mV4WRJ)")
+
+let valid ctx consts f =  
+  let solver = mk_simple_solver ctx in
+  let res = check solver (consts :: [mk_not ctx f])in
+  match res with
+  | SATISFIABLE -> false
+  | UNSATISFIABLE -> true
+  | UNKNOWN -> failwith "can not evaluate formula (H9k5JC)"
+
+let eval_formula f =
+  let ctx = mk_context [] in
+  let z3f, rmap = formula_to_z3 ctx [] f in
+  let consts = List.map snd rmap in
+  valid ctx (mk_distinct ctx consts) z3f
 
 let rec negate = function
     Not f -> f
@@ -169,17 +237,23 @@ let rec convert_dnf = function
   | Not (Or (f1, f2)) -> convert_dnf (And (Not f1, Not f2))
   | f -> f
 
+exception Undecidable_formula of string
+
 (* This is a simple solver that drops quite a bit of information. *)
+(* f1 |= f2 *)
 let eval_entails f1 f2 =
   let rec substitute f3 = function
       And (f,f') -> substitute (substitute f3 f) f'
     | EqVar  (l,e) -> sub_loc  e l f3
-    | False l -> True l
-    | True _
-    | Expr _
-    | EqExpr _
-    | Q _
-    | Not _ -> f3 
+    | EqExpr (V v1, V v2) -> if v1 = v2 then f3 else True
+    | EqExpr (V v, R r)
+    | EqExpr (R r, V v) -> sub_reg (V v) r f3
+    | False -> True
+    | True -> f3
+    | Not _ -> raise Not_implemented
+    | EqExpr _ -> raise Not_implemented
+    | Q _ -> raise (Undecidable_formula "formula contains Qx construciton (Bxmq05)")
+    | Expr _ -> raise (Invalid_argument "bare expression in formula (x9zEsN)")
     | Or _ -> raise (Invalid_argument "argument has Or (DjytOl)")
     | Implies _ -> raise (Invalid_argument "argument has Implies (vQQNlT)")
   in
@@ -189,5 +263,5 @@ let eval_entails f1 f2 =
   in
   eval_dnf (convert_dnf f1)
 
-let tautology f = eval_entails (True "taut (zT9iJi)") f
-let unsatisfiable f = eval_entails f (False "sat (dH0Sz6)") 
+let tautology f = eval_entails True f
+let unsatisfiable f = eval_entails f False
