@@ -25,13 +25,35 @@ The dune commands are aliased in a Makefile, under `make all`, `make build`, `ma
 
 ## Running the tool
 
-Dune builds the executable at `./_build/default/src/pomsets.exe`.
+Dune builds the executable at `./_build/default/src/pomsets.exe`, you will need to pass in a litmus test file. A sample is provided in `demo.lit`.
+
+Litmus tests have 3 sections. 
+  1. First an optional configuration section which contains the name of the test, a value set, and optionally a comment.
+  2. Second, the program itself written in a simple syntax. Grammar is in `src/parse/Parser.mly`.
+  3. Finally, an optional set of assertions in the format `{allow|forbid} (<boolean expression>) [] "<comment>"`. Multiple assertions can be listed, with `;` as a separator.
+
+```
+name="Demo"
+values={0,1}
+comment "Demonstrates simple calculation of dependency"
+%%
+x := 0;
+r1 := x;
+if (r1 = 0) {
+  y := 1
+}
+%%
+allow (r1 = 0) [] ""
+```
+
 
 ## Options
 
 ```
 ./_build/default/src/pomsets.exe [OPTIONS] <FILENAME>
-  --log        Set the log level as one of {all, debug, warn, error, none} [default: none]
+  --check      Check that pomsets generated satisfy the litmus assertion [default: false]
+  --complete   Print only completed pomsets [default: false]
+  --log        Set the log level as one of {all, info, debug, warn, error, none} [default: none]
   --log-time   Include time stamps in log output [default: false]
   --program    Interpret a program from the command line.
   --size       Print the number of completed pomsets [default: false]

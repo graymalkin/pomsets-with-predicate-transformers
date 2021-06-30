@@ -231,7 +231,6 @@ let build_extensions r1 r2 e1 e2 =
 (** Semantics *)
 let pomset_skip = [empty_pomset]
 
-(** TODO: we're using the minimal dep relation, rather than any subset -- is this safe? *)
 (** We are now computing all the possible reads that could interfere, see note below. *)
 let pomsets_seq_gen ps1 ps2 =
   info "SEQ(PS1, PS2)\n%!";
@@ -289,7 +288,7 @@ let pomsets_seq_gen ps1 ps2 =
           let read_sets = powerset (List.filter (is_read <.> lab_new) evs_new) in
           read_sets |> List.map (fun rs ->
             let down e = List.find_all (fun c -> List.mem (c, e) du && c <> e) rs in
-            (* TODO: Confirm with James that p1.evs is a good index for the use of the predicate
+            (* We have confirmed with James that p1.evs is a good index for the use of the predicate
                transformer *)
             let k2' e =
               if is_read (lab_new e) 
@@ -318,7 +317,7 @@ let pomsets_seq_gen ps1 ps2 =
                 p1.pt (List.map pt_map1 d) (p2.pt (List.map pt_map2 d) f)
               );
 
-              (* TODO: confirm that this is E_1 and not E (i.e. events from E1 and E2) *)
+              (* We have confirmed with James that this is E_1 is a good index *)
               term = And (p1.term, p1.pt p1.evs p2.term);           (* S5  *)
               ord = ord_new;                                        (* S6  *)
 
@@ -499,7 +498,7 @@ let grow_pomset (rf : (event * event) list) p =
   let m7c = List.map (fun p -> { p with ord = rtc p.evs (rf @ p.ord) }) m7b in
   m7c
 
-let interp vs prog = 
+let interp vs check_complete prog = 
   let rec go vs = function
     Assign (r, e) -> assign_gen r e
   | Skip -> [empty_pomset]
@@ -518,5 +517,9 @@ let interp vs prog =
     ) [] (go vs prog)
   in
   let good_pomsets = List.filter (uncurry wf_pomset) ps in
-  let good_pomsets = List.filter (uncurry complete) good_pomsets in
+  let good_pomsets = 
+    if check_complete
+    then List.filter (uncurry complete) good_pomsets
+    else good_pomsets
+  in
   List.map snd good_pomsets

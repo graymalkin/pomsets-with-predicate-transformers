@@ -6,6 +6,8 @@
 open Preliminaries
 open PomsetPTSeq
 
+let check_outcomes = ref false
+let check_complete = ref false
 let print_latex = ref false
 let print_size = ref false
 let print_time = ref false
@@ -30,18 +32,22 @@ let dedup ps =
     else lcmp
   ) ps
 
-let pomsetpt (config, ast, _outcomes) = 
+let pomsetpt (config, ast, outcomes) = 
   let config = Option.value ~default:RunConfig.default_configuration config in
   let vs = config.RunConfig.values in
-  let ps = interp vs (ASTToPomsetPTSeq.convert_program ast) in
-  (* ignore @@ Option.map (List.iter (function
-      (AST.Allowed (_b,_os,c) as o)
-    | (AST.Forbidden (_b,_os,c) as o) -> 
-      ignore @@ Option.map (Format.printf "%s") c;
-      if check o ps
-      then Format.printf " (pass)\n"
-      else Format.printf " (fail)\n"
-  )) outcomes; *)
+  let ps = interp vs !check_complete (ASTToPomsetPTSeq.convert_program ast) in
+  if !check_outcomes then 
+    ignore @@ Option.map (List.iter (function
+        (AST.Allowed (_b,_os,c) as o)
+      | (AST.Forbidden (_b,_os,c) as o) -> 
+        ignore @@ Option.map (Format.printf "%s") c;
+        if check o ps
+        then Format.printf " (pass)\n"
+        else Format.printf " (fail)\n"
+    )) outcomes;
+  if not !print_latex then (
+    List.iter (Format.fprintf Format.std_formatter "%a" PomsetPTSeq.pp_pomset) ps
+  );
   if !print_size then Format.printf "%d pomsets\n" (List.length ps);
   if !print_latex then 
     PrintLatexDoc.pp_document Format.std_formatter config ast LatexPomsetPTSeq.pp_pomset (dedup ps);
@@ -53,7 +59,9 @@ let run_f f = pomsetpt (Parse.parse_file f)
 let run_s s = pomsetpt (Parse.parse_string s)
 
 let args = Arg.align [
-  ("--log", Arg.String Util.set_log_level, "  Set the log level as one of {all, info, debug, warn, error, none} [default: none]")
+  ("--check", Arg.Set check_outcomes, "  Check that pomsets generated satisfy the litmus assertion [default: false]")
+; ("--complete", Arg.Set check_complete, "  Print only completed pomsets [default: false]")
+; ("--log", Arg.String Util.set_log_level, "  Set the log level as one of {all, info, debug, warn, error, none} [default: none]")
 ; ("--log-time", Arg.Set Util.log_times, "  Include time stamps in log output [default: false]")
 ; ("--program", Arg.Rest run_s, "  Interpret a program from the command line.")
 ; ("--size", Arg.Set print_size, "  Print the number of completed pomsets [default: false]")
