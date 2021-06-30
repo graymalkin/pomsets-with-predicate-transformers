@@ -38,6 +38,15 @@ type expr =
 | Lte of expr * expr
 [@@deriving show { with_path = false }]
 
+let rec eval_expr env = function
+  V (Val v) -> v
+| R (Reg r) -> env r
+| Eq (e1, e2) -> if eval_expr env e1 = eval_expr env e2 then 1 else 0
+| Gt (e1, e2) -> if eval_expr env e1 > eval_expr env e2 then 1 else 0
+| Gte (e1, e2) -> if eval_expr env e1 >= eval_expr env e2 then 1 else 0
+| Lt (e1, e2) -> if eval_expr env e1 < eval_expr env e2 then 1 else 0
+| Lte (e1, e2) -> if eval_expr env e1 <= eval_expr env e2 then 1 else 0
+
 let rec pp_expr fmt = function
   V (Val v) -> Format.fprintf fmt "%d" v
 | R (Reg r) -> Format.fprintf fmt "%s" r
@@ -72,6 +81,43 @@ let rec pp_formula fmt = function
 | True -> Format.fprintf fmt "tt"
 | False -> Format.fprintf fmt "ff"
 
+let rec simp_formula f = 
+  let go = function
+      And (True, f) | And (f, True) -> f
+    | And (False, _) | And (_, False) -> False
+    | And (f1, f2) -> And (simp_formula f1, simp_formula f2)
+    | Or (False, f) | Or (f, False) -> simp_formula f
+    | Or (True, _) | Or (_, True) -> True
+    | Or (f1, f2) -> Or (simp_formula f1, simp_formula f2)
+    | Implies (False, _) -> True
+    | Implies (True, f) -> simp_formula f
+    | Implies (f1, f2) -> Implies (simp_formula f1, simp_formula f2)
+    | Not (Not f) -> simp_formula f
+    | Not f -> Not (simp_formula f)
+    | EqExpr (e1, e2)
+    | Expr (Eq (e1, e2)) ->
+      begin
+        try
+          let v1 = eval_expr empty_env e1 in 
+          let v2 = eval_expr empty_env e1 in 
+          if v1 = v2 then True else False
+        with Not_found -> EqExpr (e1, e2)
+      end
+    | f -> f
+  in
+  let p = ref f in
+  let n = ref (go f) in
+  while !p <> !n
+  do
+    p := !n;
+    n := go !p
+  done;
+  !n
+
+let simp_formulae = true
+let pp_formula fmt f =
+  let f = if simp_formulae then simp_formula f else f in
+  pp_formula fmt f
 
 let rec formula_map fn = function
     Expr _ as leaf -> fn leaf
