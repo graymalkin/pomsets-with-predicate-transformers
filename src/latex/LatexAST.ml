@@ -1,8 +1,16 @@
 open AST
 
+let pp_latex_ordering fmt = function
+  Relaxed -> Format.fprintf fmt "\\mRLX"
+| Release -> Format.fprintf fmt "\\mREL"
+| Acquire -> Format.fprintf fmt "\\mACQ"
+| SC -> Format.fprintf fmt "\\mSC"
+| NonAtomic -> ()
+
+
 let rec pp_latex_expr fmt = function
     Number n -> Format.fprintf fmt "%d" n
-  | Register r -> Format.fprintf fmt "\\texttt{%s}" r
+  | Register r -> Format.fprintf fmt "%s" r
   | Multiplication (l, r) -> Format.fprintf fmt "%a * %a" pp_latex_expr l pp_latex_expr r
   | Division (l, r) -> Format.fprintf fmt "%a / %a" pp_latex_expr l pp_latex_expr r
   | Addition (l, r) -> Format.fprintf fmt "(%a + %a)" pp_latex_expr l pp_latex_expr r
@@ -29,47 +37,16 @@ let rec pp_latex_bexpr fmt = function
 let pp_tex_ast fmt ast =
   let rec go fmt = function
     Skip -> Format.fprintf fmt "\\done"
-  | Assign (r, e) -> Format.fprintf fmt "\\assign[]{%a}{%a}" pp_register r pp_expr e
+  | Assign (r, e) -> Format.fprintf fmt "\\LET{%a}{%a}" pp_register r pp_expr e
   (* TODO : Print rmw_strength / exclusivity *)
-  | Load (r, g, a, _) -> Format.fprintf fmt "\\assign[%a]{%s}{%s}" pp_ordering a r g
-  | Store (g, e, a, _) -> Format.fprintf fmt "\\assign[%a]{%s}{%a}" pp_ordering a g pp_expr e
-  | Fadd (r, g, rs, o_r, o_w, e) ->
-     Format.fprintf fmt "\\assign[]{%a}\\texttt{FADD}(%a, %a, %a, %a, %a)"
-                                       pp_register r
-                                       pp_global g
-                                       pp_rmw_strength rs
-                                       pp_ordering o_r
-                                       pp_ordering o_w
-                                       pp_expr e
-  | Cas (r, g, o_r, o_w, e1, e2) ->
-     Format.fprintf fmt "\\assign[]{%a}\\texttt{CAS}(%a, %a, %a, %a, %a)"
-                    pp_register r
-                    pp_global g
-                    pp_ordering o_r
-                    pp_ordering o_w
-                    pp_expr e1
-                    pp_expr e2
-
-  | Sequence (p1, p2) ->
-     Format.fprintf fmt "%a \\sequencing \\\\ \n %a" go p1 go p2
-
-  | Parallel _ as prog ->
-     let ps = list_of_pars prog in
-     let cols = (List.length ps * 2) - 1 in
-     let cols_spec = String.concat "" (Util.repeat "c" cols) in
-     Format.fprintf fmt "\\begin{array}{%s}\n" cols_spec;
-     let pp_colsep fmt () = Format.fprintf fmt "\n& || &\n  " in
-     Fmt.list ~sep:pp_colsep go fmt ps;
-     Format.fprintf fmt "\n\\end{array}"
+  | Load (r, g, a, _) -> Format.fprintf fmt "\\PR[%a]{%s}{%s}" pp_latex_ordering a g r
+  | Store (g, e, a, _) -> Format.fprintf fmt "\\PW[%a]{%s}{%a}" pp_latex_ordering a g pp_expr e
+  | Sequence (p1, p2) -> Format.fprintf fmt "%a \\SEMI %a" go p1 go p2
   | Conditional (c, p1, p2) -> (
     match p2 with
-        Skip -> Format.fprintf fmt "\\ifthen{%a}{%a}" pp_boolean_expr c go p1
-      | _ -> Format.fprintf fmt "\\ifthenelse{%a}{%a}{%a}" pp_boolean_expr c go p1 go p2)
-  | While (c, p1) ->
-    Format.fprintf fmt "\\while{%a}{%a}" pp_boolean_expr c go p1
+        Skip -> Format.fprintf fmt "\\IF{%a} \\THEN{%a} \\FI" pp_latex_bexpr c go p1
+      | _ -> Format.fprintf fmt "\\IF{%a} \\THEN{%a} \\ELSE{%a} \\FI" pp_latex_bexpr c go p1 go p2)
   | Fence o -> Format.fprintf fmt "\\fencecmd{\\textsc{%a}}" pp_ordering o
-  | Print e -> Format.fprintf fmt "print\ %a" pp_expr e
-  | Lock -> Format.fprintf fmt "\\texttt{lock}"
-  | Unlock -> Format.fprintf fmt "\\texttt{unlock}"
+  | _ -> raise Util.Not_implemented
   in
   Format.fprintf fmt "%a" go ast

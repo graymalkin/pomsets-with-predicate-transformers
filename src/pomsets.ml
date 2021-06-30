@@ -22,6 +22,14 @@ let check = function
   r
 )
 
+let dedup ps = 
+  List.sort_uniq (fun p1 p2 -> 
+    let lcmp = compare (List.map p1.lab p1.evs) (List.map p2.lab p2.evs) in
+    if lcmp = 0
+    then compare p1.ord p2.ord
+    else lcmp
+  ) ps
+
 let pomsetpt (config, ast, _outcomes) = 
   let config = Option.value ~default:RunConfig.default_configuration config in
   let vs = config.RunConfig.values in
@@ -34,9 +42,9 @@ let pomsetpt (config, ast, _outcomes) =
       then Format.printf " (pass)\n"
       else Format.printf " (fail)\n"
   )) outcomes; *)
-  Format.print_newline ();
   if !print_size then Format.printf "%d pomsets\n" (List.length ps);
-  if !print_latex then PrintLatexDoc.pp_document Format.std_formatter config ast LatexPomsetPTSeq.pp_pomset ps;
+  if !print_latex then 
+    PrintLatexDoc.pp_document Format.std_formatter config ast LatexPomsetPTSeq.pp_pomset (dedup ps);
   if !print_time then Format.printf "Execution time: %fs\n" (Sys.time ());
   ()
 
