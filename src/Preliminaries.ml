@@ -83,7 +83,7 @@ let rec pp_formula fmt = function
 
 let rec simp_formula f = 
   let go = function
-      And (True, f) | And (f, True) -> f
+      And (True, f) | And (f, True) -> simp_formula f
     | And (False, _) | And (_, False) -> False
     | And (f1, f2) -> And (simp_formula f1, simp_formula f2)
     | Or (False, f) | Or (f, False) -> simp_formula f
