@@ -1,5 +1,5 @@
 TOOL = ../_build/default/src/pomsets.exe
-OPTIONS = --tex
+OPTIONS = --tex --complete
 TEX_OPTIONS = --interaction=batchmode
 PREAMBLE = ./latex-template/preamble.tex
 

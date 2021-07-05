@@ -9,18 +9,31 @@ open PomsetPTSeq
 let check_outcomes = ref false
 let check_complete = ref false
 let print_latex = ref false
+let print_pomsets = ref false
 let print_size = ref false
 let print_time = ref false
 
 let check_outcome env bexpr = 
-  let trans_env r = try let Val v = env (Reg r) in v with Not_found -> 0 in
+  let trans_env r = let Val v = env (Reg r) in v in
   AST.eval_bexpr (trans_env) bexpr
 
 let check = function 
   AST.Allowed (bexpr, _, _) -> List.exists (fun p -> check_outcome p.smap bexpr)
 | AST.Forbidden (bexpr, _, _) -> List.for_all (fun p -> 
   let r = not (check_outcome p.smap bexpr) in
-  if not r then Debug.debug "%a\n" PomsetPTSeq.pp_pomset p;
+  if not r then (
+    List.iter (fun e ->
+      Debug.debug "Event: [%d : %a], pre e = %a, tautology (pre e) = %b\n%!"
+        e
+        pp_action (p.lab e)
+        pp_formula (p.pre e)
+        (tautology (sub_quis True (p.pre e)))
+    ) p.evs;
+    Debug.debug "term = %a, tautology (term) = %b\n%!"
+      pp_formula p.term
+      (tautology p.term);
+    Debug.debug "%a\n" PomsetPTSeq.pp_pomset p
+  );
   r
 )
 
@@ -45,8 +58,8 @@ let pomsetpt (config, ast, outcomes) =
         then Format.printf " (pass)\n"
         else Format.printf " (fail)\n"
     )) outcomes;
-  if not !print_latex then (
-    List.iter (Format.fprintf Format.std_formatter "%a" PomsetPTSeq.pp_pomset) ps
+  if not !print_latex && !print_pomsets then (
+    List.iter (Format.fprintf Format.std_formatter "%a\n" PomsetPTSeq.pp_pomset) ps
   );
   if !print_size then Format.printf "%d pomsets\n" (List.length ps);
   if !print_latex then 
@@ -64,6 +77,7 @@ let args = Arg.align [
 ; ("--log", Arg.String Util.set_log_level, "  Set the log level as one of {all, info, debug, warn, error, none} [default: none]")
 ; ("--log-time", Arg.Set Util.log_times, "  Include time stamps in log output [default: false]")
 ; ("--program", Arg.Rest run_s, "  Interpret a program from the command line.")
+; ("--print", Arg.Set print_pomsets, "  Pretty print pomsets [default: false]")
 ; ("--size", Arg.Set print_size, "  Print the number of completed pomsets [default: false]")
 ; ("--tex", Arg.Set print_latex, "  Use LaTeX output [default: false]")
 ; ("--time", Arg.Set print_time, "  Show execution time [default: false]")

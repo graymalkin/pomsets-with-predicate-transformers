@@ -26,6 +26,16 @@ let empty_env = function _ -> raise Not_found
 let join_env e1 e2 p = try e1 p with Not_found -> e2 p
 let complete d env = List.for_all (fun e -> try ignore @@ env e; true with Not_found -> false) d
 
+let fix f x =
+  let p = ref x in
+  let n = ref (f x) in
+  while !p <> !n
+  do
+    p := !n;
+    n := f !p
+  done;
+  !n
+
 let map_default d f xs = 
   if xs = [] 
   then d

@@ -47,6 +47,7 @@ let pp_tex_ast fmt ast =
         Skip -> Format.fprintf fmt "\\IF{%a} \\THEN{%a} \\FI" pp_latex_bexpr c go p1
       | _ -> Format.fprintf fmt "\\IF{%a} \\THEN{%a} \\ELSE{%a} \\FI" pp_latex_bexpr c go p1 go p2)
   | Fence o -> Format.fprintf fmt "\\fencecmd{\\textsc{%a}}" pp_ordering o
+  | Parallel (p1, p2) -> Format.fprintf fmt "(%a) \\; \\; || \\; \\; (%a)" go p1 go p2
   | _ -> raise Util.Not_implemented
   in
   Format.fprintf fmt "%a" go ast

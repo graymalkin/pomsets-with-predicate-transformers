@@ -41,4 +41,5 @@ let rec convert_program = function
 | AST.Conditional (be, pt, pf) ->
   P.Ite (convert_bexpr be, convert_program pt, convert_program pf)
 | AST.Sequence (p1, p2) -> P.Sequence (convert_program p1, convert_program p2)
+| AST.Parallel (p1, p2) -> P.Par (convert_program p1, convert_program p2)
 | _ -> raise Util.Not_implemented

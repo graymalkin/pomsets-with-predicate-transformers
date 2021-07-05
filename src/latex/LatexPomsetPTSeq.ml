@@ -37,7 +37,9 @@ let pp_latex_mode fmt = function
 | SC -> Format.fprintf fmt "\\mSC"
 
 let pp_latex_label fmt = function
-  Read (o, g, v) -> 
+  Init ->
+  Format.fprintf fmt "\\texttt{init}"
+| Read (o, g, v) -> 
   Format.fprintf fmt "\\DR[%a]{%a}[]{%a}[]" pp_latex_mode o pp_latex_mem_ref g pp_latex_val v
 | Write (o, g, v) -> 
   Format.fprintf fmt "\\DW[%a]{%a}[]{%a}[]" pp_latex_mode o pp_latex_mem_ref g pp_latex_val v

@@ -21,29 +21,35 @@ let pp_mode fmt = function
 | SC -> Format.fprintf fmt "sc"
 
 type grammar = 
-  Assign of register * expr
+  Initialisation
+| Assign of register * expr
 | Load of register * mem_ref * mode
 | Store of mem_ref * mode * expr
 | Skip
 | Sequence of grammar * grammar
 | Ite of expr * grammar * grammar
+| Par of grammar * grammar
 
 let rec pp_grammar fmt = function
-    Assign (Reg r, e) -> Format.fprintf fmt "%s := %a" r pp_expr e
+    Initialisation -> Format.fprintf fmt "init"
+  | Assign (Reg r, e) -> Format.fprintf fmt "%s := %a" r pp_expr e
   | Load (Reg r, Ref x, am) -> Format.fprintf fmt "%s := %s.load(%a)" r x pp_mode am
   | Store (Ref x, am, e) -> Format.fprintf fmt "%s.store(%a, %a)" x pp_mode am pp_expr e
   | Skip -> Format.fprintf fmt "skip"
   | Sequence (p1, p2) -> Format.fprintf fmt "%a; %a" pp_grammar p1 pp_grammar p2
   | Ite (e, p1, p2) -> Format.fprintf fmt "if(%a) { %a } else { %a }" pp_expr e pp_grammar p1 pp_grammar p2
+  | Par (p1, p2) -> Format.fprintf fmt "{ %a } || { %a }" pp_grammar p1 pp_grammar p2
 
 type action =
-  Write of mode * mem_ref * value
+  Init
+| Write of mode * mem_ref * value
 | Read of mode * mem_ref * value
 | Fence of mode
 [@@deriving show { with_path = false }]
 
 let mode_of = function
-    Write (m,_,_)
+    Init -> Rlx
+  | Write (m,_,_)
   | Read (m,_,_)
   | Fence m -> m
 
@@ -51,9 +57,18 @@ let mem_ref_of = function
     Write (_,x,_)
   | Read (_,x,_) -> Some x
   | Fence _ -> None
+  | Init -> None (* weird *)
+
+let same_location = curry @@ function
+  Init, _ -> true
+| _, Init -> true
+| Fence _, _ -> false
+| _, Fence _ -> false
+| a, b -> mem_ref_of a = mem_ref_of b
 
 let value_of = function
-    Write (_,_,v)
+    Init -> Some (Val 0)
+  | Write (_,_,v)
   | Read (_,_,v) -> Some v
   | Fence _ -> None
 
@@ -63,9 +78,8 @@ let eq_action = curry @@ function
 | Fence m, Fence m' -> m = m'
 | _ -> false
 
-let is_access = function Read _ | Write _ -> true | Fence _ -> false
 let is_read   = function Read _ -> true | _ -> false
-let is_write  = function Write _ -> true | _ -> false
+let is_write  = function Init | Write _ -> true | _ -> false
 let is_release a = List.mem (mode_of a) [Rel; SC]
 
 let mode_order = [
@@ -81,36 +95,13 @@ let mord a b = List.mem (a,b) mode_order
 (** Definition 2.1 *)
 let matches = curry @@ function
     Write (_,x,v), Read (_,x',v') -> x = x' && v = v' 
+  | Init, Read (_, _, Val 0) -> true
   | _ -> false
 
 let blocks = curry @@ function
     Write (_,x,_), Read (_,x',_) -> x = x'
+  | Init, Read _ -> true
   | _ -> false
-
-let co_delays = curry @@ function
-    Write (_,x,_), Write (_,x', _)
-  | Read (_,x,_), Read (_,x',_)
-  | Write (_,x,_), Read (_,x',_) -> x = x'
-  | _ -> false
-
-let sync_delays = curry @@ function
-    _, Write (m,_,_) when mord Rel m -> true
-  | _, Fence m when mord Rel m -> true
-  | Read _, Fence m when mord Acq m -> true
-  | Read (m,_,_), _ when mord Acq m -> true
-  | Fence m, _ when mord Acq m -> true 
-  | Fence m, Write _ when mord Rel m -> true 
-  | Write (m,x,_), Write(_,x',_) when mord Rel m && x = x' -> true
-  | _ -> false
-
-let sc_delays = curry @@ function
-    Write (SC,_,_), Write (SC,_,_)
-  | Write (SC,_,_), Read (SC,_,_)
-  | Read (SC,_,_), Write (SC,_,_)
-  | Read (SC,_,_), Read (SC,_,_) -> true
-  | _ -> false
-
-let delays a b = co_delays a b || sync_delays a b || sc_delays a b
 
 (** Definition 2.2 *)
 type transformer = formula -> formula
@@ -127,7 +118,7 @@ let wf_transformer_family p_univ e f tf =
     )
   )
 
-(** Definition 2.4 *)
+(** Definition 3.4 *)
 type pomsetPT = {
   evs: event set;                                                   (* M1  *)
   lab: (event, action) environment;                                 (* M2  *)
@@ -138,7 +129,7 @@ type pomsetPT = {
   pt:   transformer_family;                                         (* M4  *)
   
   term: formula;                                                    (* M5  *)
-  ord: (event, event) relation;                                     (* M7  *)
+  ord: (event, event) relation;                                     (* M6  *)
 
   (* This is used to compute final state *)
   smap: (register, value) environment;
@@ -163,8 +154,33 @@ let empty_pomset = {
   smap = empty_env
 }
 
+(* {
+  empty_pomset with
+  evs = [id];                                                   (* W1  *)
+  lab = bind id (Write (mode, x, v)) empty_env;                 (* W2  *)
+  pre = bind id (EqExpr (m, V v)) empty_env;                    (* W3  *)
+  pt = (fun _d f ->                                             (* W4a  *)
+        sub_loc m x f
+    |> sub_qui (EqExpr (m, V v)) (Qui x)
+  );
+  term = EqExpr (m, V v);                                       (* W5a *)
+} *)
+
+let init_pomset = 
+  let id = fresh_id () in
+  {
+    evs = [id];
+    lab = bind id Init empty_env;
+    pre = bind id True empty_env;
+    pt = (fun _d f -> sub_locs (V (Val 0)) f |> sub_quis True);
+    term = True;
+    ord = [];
+    smap = empty_env
+  }
+
 let pp_action fmt = function
-  Read (m,x,v) -> Format.fprintf fmt "R(%a,%a,%a)" pp_mode m pp_mem_ref x pp_value v
+  Init -> Format.fprintf fmt "Init"
+| Read (m,x,v) -> Format.fprintf fmt "R(%a,%a,%a)" pp_mode m pp_mem_ref x pp_value v
 | Write (m,x,v) -> Format.fprintf fmt "W(%a,%a,%a)" pp_mode m pp_mem_ref x pp_value v
 | Fence m -> Format.fprintf fmt "F(%a)" pp_mode m
 
@@ -176,8 +192,7 @@ let pp_pomset fmt p =
       pp_action (p.lab e)
   ) p.evs;
   Format.fprintf fmt "term: %a\n" pp_formula p.term;
-  Format.fprintf fmt "ord: %a\n" (PPRelation.pp_relation pp_int pp_int) p.ord;
-  Format.fprintf fmt "\n"
+  Format.fprintf fmt "ord: %a\n" (PPRelation.pp_relation pp_int pp_int) p.ord
 
 (* M2 *)
 let wf_lab p = complete p.evs p.lab
@@ -190,36 +205,24 @@ let wf_pre p = complete p.evs p.pre
    formulae *)
 let wf_pt _p = true
 
+(* M5a *)
+let wf_term p = 
+  try 
+    eval_entails p.term (p.pt p.evs True)
+  with e ->
+   debug "%a |= %a\n%!" pp_formula p.term pp_formula (p.pt p.evs True);
+   raise e
+
+
 (* M6 *)
-let wf_rf rf p =
-     injective rf
-  && List.for_all (uncurry (matches <..> p.lab)) rf
+let wf_ord p = partial_order p.ord
 
-(* M7 *)
-let wf_ord rf p =
-     partial_order p.ord
-  && rf |> List.for_all (fun (d,e) ->
-      p.evs |> List.exists (fun c ->
-        (blocks <..> p.lab) c e ==> (
-          List.mem (c,d) p.ord || List.mem (e,c) p.ord
-        )
-      )
-    )
-
-let wf_pomset rf p =
+let wf_pomset p =
      wf_lab p
   && wf_pre p
   && wf_pt p
-  && wf_rf rf p
-  && wf_ord rf p 
-
-let top_level rf p =
-     wf_pomset rf p
-  && tautology p.term                                               (* T1  *)
-  && p.evs |> List.for_all (fun e ->                                (* T2  *)
-         tautology (p.pre e)                                        (* T2a *)
-      && is_read (p.lab e) ==> List.exists ((=) e <.> snd) rf       (* T2b *)
-    )
+  && wf_term p
+  && wf_ord p
 
 let build_extensions r1 r2 e1 e2 =
   let e1r = e1 <-> e2 in
@@ -401,6 +404,29 @@ let if_gen cond ps1 ps2 =
     ) 
   ))
 
+(* This is for top level parallel only, not intended for use with code 
+   sequenced after the parallel.  *)
+let par_gen ps1 ps2 = 
+  (* We assume p1 and p2 to be disjoint *)
+  (cross ps1 ps2) |> List.map (fun (p1, p2) -> 
+    {
+      evs = p1.evs <|> p2.evs;
+      lab = join_env p1.lab p2.lab;
+      pre = (fun e ->
+        if List.mem e p1.evs
+        then p1.pre e
+        else p2.pre e
+      );
+
+      (* This distinguisishes this par from left par *)
+      pt = (fun _d f -> f);
+      term = And (p1.term, p2.term);
+      ord = p1.ord <|> p2.ord;
+
+      smap = join_env p1.smap p2.smap;
+    }
+  )
+
 let assign_gen r m = 
   info "%a := %a\n%!" pp_register r pp_expr m;
   [ { empty_pomset with pt = (fun _d f -> sub_reg m r f) } ]        (* LET *)
@@ -457,18 +483,16 @@ let write_gen vs x mode m =
     }
   ]
 
-let complete rf p =
+let complete p =
   List.for_all (fun e ->
-       is_read (p.lab e) ==> List.exists (fun (_,e') -> e = e') rf  (* C2  *)
-    && tautology (sub_quis True (p.pre e))                          (* C3  *)
+    tautology (p.pre e)                                             (* C3  *)
   ) p.evs
-  && tautology p.term                                               (* C5  *)
+   && tautology p.term                                              (* C5  *)
 
 let gen_rf_candidates p =
   let reads = List.filter (is_read <.> p.lab) p.evs in
   let writes = List.filter (is_write <.> p.lab) p.evs in
   let is_some = function None -> false | Some _ -> true in
-  let same_location a b = mem_ref_of a = mem_ref_of b && is_some (mem_ref_of a) in
   let same_value a b = value_of a = value_of b && is_some (value_of a) in
   let wr_sloc_sval = List.fold_left (fun acc r ->
       let sloc_sval_writes = List.filter (fun w -> 
@@ -481,18 +505,17 @@ let gen_rf_candidates p =
   in
   big_union (List.map powerset (BatList.n_cartesian_product wr_sloc_sval))
 
-(* This function assumes that rf is _not_ empty. *)
 let grow_pomset (rf : (event * event) list) p =
   (* M7 *)
   (* M7a holds by construction of rf *)
   let m7b = List.fold_left (fun ps (d,e) -> 
       let blockers = List.filter (fun c -> blocks (p.lab c) (p.lab e)) p.evs in
-      let blockers = List.map (fun c -> (c,d), (e,c)) blockers in
+      let ord_choice = List.map (fun c -> (c,d), (e,c)) blockers in
       List.fold_left (fun ps (lord, rord) -> 
         List.flatten @@ List.map (fun p ->
           [{ p with ord = lord :: p.ord }; { p with ord = rord :: p.ord }]
         ) ps
-      ) ps blockers
+      ) ps ord_choice
     ) [p] rf
   in
   let m7c = List.map (fun p -> { p with ord = rtc p.evs (rf @ p.ord) }) m7b in
@@ -500,26 +523,19 @@ let grow_pomset (rf : (event * event) list) p =
 
 let interp vs check_complete prog = 
   let rec go vs = function
-    Assign (r, e) -> assign_gen r e
+    Initialisation -> [init_pomset]
   | Skip -> [empty_pomset]
+  | Assign (r, e) -> assign_gen r e
   | Load (r, x, mode) -> read_gen vs r x mode
   | Store (x, mode, e) -> write_gen vs x mode e
   | Sequence (p1, p2) -> pomsets_seq_gen (go vs p1) (go vs p2)
   (* Note: we expect e to be a binary expr. We do not coerce as is expected in the paper. *)
   | Ite (e, p1, p2) -> if_gen (Expr e) (go vs p1) (go vs p2)
+  | Par (p1, p2) -> par_gen (go vs p1) (go vs p2)
   in
-  let ps = List.fold_left (fun acc p ->
-      let rfs = gen_rf_candidates p in
-      List.fold_left (fun acc rf ->
-        let new_ps = if rf <> [] then grow_pomset rf p else [p] in
-        List.map (fun p -> rf, p) new_ps @ acc
-      ) [] rfs @ acc
-    ) [] (go vs prog)
-  in
-  let good_pomsets = List.filter (uncurry wf_pomset) ps in
-  let good_pomsets = 
-    if check_complete
-    then List.filter (uncurry complete) good_pomsets
-    else good_pomsets
-  in
-  List.map snd good_pomsets
+  let prog = if check_complete then Sequence (Initialisation, prog) else prog in
+  let ps = go vs prog in
+  let good_pomsets = List.filter wf_pomset ps in
+  if check_complete
+  then List.filter complete good_pomsets
+  else good_pomsets

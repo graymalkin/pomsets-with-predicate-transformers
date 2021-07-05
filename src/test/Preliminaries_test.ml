@@ -49,10 +49,26 @@ let x_is_one_or_two = Or (x_is 1, x_is 2)
 
 let test_eval_entails_one_or_two_is_one _ = assert_equal false (eval_entails x_is_one_or_two x_is_one)
 
+let test_eval_entails_true_true _ = assert_equal true (eval_entails True True)
+
 let y_is n = EqVar (Ref "y", V (Val n))
 let x_is_one_and_y_is_one = And (x_is 1, y_is 1)
+
+let test_reg_one_is_one _ = 
+  let f1 =
+      And (
+        EqExpr (R (Reg "r1"), V (Val 1)),
+        EqExpr (R (Reg "r2"), V (Val 1))
+      )
+  in
+  let f2 = 
+      EqExpr (R (Reg "r1"), V (Val 1))
+  in
+  assert_equal true (eval_entails f1 f2)
+
                           
-let test_eval_entails_xy_one_is_one _ = assert_equal true (eval_entails x_is_one_and_y_is_one x_is_one)
+let test_eval_entails_xy_one_is_one _ = 
+  assert_equal true (eval_entails x_is_one_and_y_is_one x_is_one)
 
 let test_eq_expr _ = assert_equal true (eval_entails (EqExpr ((V (Val 1), (V (Val 1))))) True)
 
@@ -93,6 +109,13 @@ let test_eval_formula_neg _ =
   let f = Not False in
   assert_equal true (eval_formula f)
 
+let test_not_taut _ =
+  let f =
+    Implies (EqExpr (R (Reg "r1"), R (Reg "r2")), False)
+  in
+  Debug.debug "%a : %b\n%!" pp_formula f (tautology f);
+  assert_equal false (tautology f)
+
 let pomset_pt_formula_suite =
   "PomsetPT formula operations" >::: [
     "test_convert_dnf (base cases)" >:: test_convert_dnf_simple
@@ -101,14 +124,17 @@ let pomset_pt_formula_suite =
   ; "test_eval_entails_lhs_false" >:: test_eval_entails_lhs_false
   ; "test_eval_entails_one_is_one" >:: test_eval_entails_one_is_one
   ; "test_eval_entails_one_or_two_is_one" >:: test_eval_entails_one_or_two_is_one
+  ; "test_reg_one_is_one" >::test_reg_one_is_one
   ; "test_eval_entails_xy_one_is_one" >:: test_eval_entails_xy_one_is_one
+  ; "test_eval_entails_true_true" >:: test_eval_entails_true_true
   ; "test_eq_expr" >:: test_eq_expr
-  (* ; "test_example_term" >:: test_example_term *)
+  ; "test_example_term" >:: test_example_term
   ; "test_eval_simple_formula" >:: test_eval_simple_formula
   ; "test_eval_formula_eq_expr" >:: test_eval_formula_eq_expr
   ; "test_eval_formula_and" >:: test_eval_formula_and
   ; "test_eval_formula_or" >:: test_eval_formula_or
   ; "test_eval_formula_impl" >:: test_eval_formula_impl
   ; "test_eval_formula_neg" >:: test_eval_formula_neg
+  ; "test_not_taut" >:: test_not_taut
   ]
 
