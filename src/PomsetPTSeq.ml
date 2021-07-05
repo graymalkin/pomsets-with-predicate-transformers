@@ -274,12 +274,16 @@ let pomsets_seq_gen ps1 ps2 =
 
         (* TODO: This misses rules i3a-c, and might generate down-useful events which are
             incompatible with dep. *)
-        let down_useful = List.filter (is_write <.> lab_new) (evs_new) in
-
-        let down_useful = powerset down_useful 
-          |> List.map (fun du -> cross du du)
-          |> List.filter (fun du -> partial_order (ord_new <|> du))
+        let down_set = evs_new <-> (List.filter (fun e -> lab_new e = Init)) evs_new in
+        let down_set_r = List.filter (is_read <.> lab_new) down_set in
+        let down_set_w = List.filter (is_write <.> lab_new) down_set in
+        let down_useful = cross down_set_r down_set_w
+          |> powerset
+          |> List.map (fun du -> transitive_closure ~refl:true (ord_new <|> du))
+          |> List.filter partial_order
         in
+
+        debug "%a\n" (pp_set (pp_relation pp_int pp_int)) down_useful;
 
         let pt_map1 e = try fst (List.assoc e freshened_eqr) with Not_found -> e in
         let pt_map2 e = try snd (List.assoc e freshened_eqr) with Not_found -> e in
@@ -322,7 +326,7 @@ let pomsets_seq_gen ps1 ps2 =
 
               (* We have confirmed with James that this is E_1 is a good index *)
               term = And (p1.term, p1.pt p1.evs p2.term);           (* S5  *)
-              ord = ord_new;                                        (* S6  *)
+              ord = du;                                             (* S6  *)
 
               (* It is important that we look in the second environment first *)
               smap = join_env p2.smap p1.smap;

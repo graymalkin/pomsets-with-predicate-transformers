@@ -80,7 +80,10 @@ let test_not_taut _ =
   let f =
     Implies (EqExpr (R (Reg "r1"), R (Reg "r2")), False)
   in
-  Debug.debug "%a : %b\n%!" pp_formula f (tautology f);
+  assert_equal false (tautology f)
+
+let test_expr_not_taut _ =
+  let f = EqExpr (R (Reg "r1"), V (Val 0)) in
   assert_equal false (tautology f)
 
 let pomset_pt_formula_suite =
@@ -100,5 +103,6 @@ let pomset_pt_formula_suite =
   ; "test_eval_formula_impl" >:: test_eval_formula_impl
   ; "test_eval_formula_neg" >:: test_eval_formula_neg
   ; "test_not_taut" >:: test_not_taut
+  ; "test_expr_not_taut" >:: test_expr_not_taut
   ]
 

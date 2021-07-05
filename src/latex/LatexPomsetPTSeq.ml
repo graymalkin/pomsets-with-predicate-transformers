@@ -20,10 +20,11 @@ let pp_latex_formula fmt f =
   | Not f -> Format.fprintf fmt "\\neg (%a)" go f
   | True -> Format.fprintf fmt "\\TRUE"
   | False -> Format.fprintf fmt "\\FALSE"
+  | Expr (Eq (e1, e2))
   | EqExpr (e1, e2) -> Format.fprintf fmt "(%a = %a)" pp_latex_expr e1 pp_latex_expr e2
-  | _ -> ()
+  | f -> Debug.debug "unknown latex print"; Format.fprintf fmt "%a" pp_formula f
   in
-  let f = simp_formula f in
+  (* let f = simp_formula f in *)
   go fmt f
 
 let pp_latex_mem_ref fmt (Ref x) = Format.fprintf fmt "%s" x
