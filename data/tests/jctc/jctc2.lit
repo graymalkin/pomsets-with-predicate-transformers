@@ -1,8 +1,6 @@
 name=JCTC2
 values={0,1}
 %%
-x := 0;
-y := 0;
 {
   r1 := x;
   r2 := x;

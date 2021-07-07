@@ -2,8 +2,6 @@ name=JCTC1
 values={0,1}
 comment "Should be allowed"
 %%
-x := 0;
-y := 0;
 {
   r1 := x;
   if (r1 >= 0) {

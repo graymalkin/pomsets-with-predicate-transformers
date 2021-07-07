@@ -1,8 +1,6 @@
 name=JCTC20
 values={0,1,42}
 %%
-x := 0;
-y := 0;
 {
   // Thread 2
   r2 := y;

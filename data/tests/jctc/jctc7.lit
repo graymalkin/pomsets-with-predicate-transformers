@@ -1,9 +1,6 @@
 name=JCTC7
 values={0,1}
 %%
-x := 0;
-y := 0;
-z := 0;
 {
   r1 := z;
   r2 := x;

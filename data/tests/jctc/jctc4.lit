@@ -1,8 +1,6 @@
 name=JCTC4
 values={0,1}
 %%
-x := 0;
-y := 0;
 {
   r1 := x;
   y := r1
@@ -11,4 +9,5 @@ y := 0;
   x := r2
 }
 %%
-forbid (r1 = 1 && r2 = 1) [] "Forbidden: values are not allowed to come out of thin air"
+forbid (r1 = 1 && r2 = 1) [] "Forbidden: values are not allowed to come out of thin air";
+allow (r1 = 0 && r2 = 0) [] "Allowed: can read from the initialisation"

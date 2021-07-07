@@ -1,8 +1,6 @@
 name=JCTC6
 values={0,1}
 %%
-A := 0;
-B := 0;
 {
   r1 := A;
   if (r1 = 1) {
