@@ -354,11 +354,11 @@ let pomsets_seq_gen ps1 ps2 =
               pre = (fun e ->
                 assert (not (List.exists (fun (_, (a, b)) -> a = e || b = e) freshened_eqr));
                 if List.mem e (List.map fst freshened_eqr)
-                then And (Or (p1.pre (pt_map1 e), k2' e), tick1 e)             (* S3c *)
+                then And (Or (p1.pre (pt_map1 e), k2' e), tick1 e)  (* S3c *)
                 else (
                   if List.mem e p1.evs
-                  then p1.pre e                                      (* S3a *)
-                  else And (k2' e, tick1 e)                          (* S3b *)
+                  then p1.pre e                                     (* S3a *)
+                  else And (k2' e, tick1 e)                         (* S3b *)
                 )
               );
 
@@ -440,8 +440,8 @@ let if_gen cond ps1 ps2 =
           else (
             (* We don't need to use the pt_map because we know we're not in eqr *)
             if List.mem e p1.evs
-            then And (cond, p1.pre e)                             (* I3a *)
-            else And (Not cond, p2.pre e)                         (* I3b *)
+            then And (cond, p1.pre e)                               (* I3a *)
+            else And (Not cond, p2.pre e)                           (* I3b *)
           )
         ); 
       
@@ -553,7 +553,7 @@ let complete p =
   List.for_all (fun e ->
     tautology (p.pre e)                                             (* C3  *)
   ) p.evs
-   && tautology p.term                                              (* C5  *)
+  && tautology p.term                                               (* C5  *)
 
 let gen_rf_candidates p =
   let reads = List.filter (is_read <.> p.lab) p.evs in
@@ -598,6 +598,7 @@ let interp vs check_complete prog =
   | Assign (r, e) -> assign_gen r e
   | Load (r, x, mode) -> read_gen vs r x mode
   | Store (x, mode, e) -> write_gen vs x mode e
+  (* TODO: We can probably specialise Sequence (Initialisation, p1) to improve performance *)
   | Sequence (p1, p2) -> 
     pomsets_seq_gen 
       (filter (go vs p1))
