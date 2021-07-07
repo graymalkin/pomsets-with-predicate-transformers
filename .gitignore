@@ -1,6 +1,7 @@
 _build/
 pomsets.byte
 pomsets.native
+pomsets.exe
 test.byte
 
 data/diagrams/
