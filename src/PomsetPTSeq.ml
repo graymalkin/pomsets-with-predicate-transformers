@@ -306,10 +306,10 @@ let pomsets_seq_gen ps1 ps2 =
         in
 
         let ord_new = List.fold_left (fun acc (c,(a,b)) ->
-            List.map (fun (a', b') ->
-              let na = if a = a' then c else a' in
-              let nb = if b = b' then c else b' in
-              (na, nb)
+            List.map (fun (l, r) ->
+              let nl = if a = l || b = l then c else l in
+              let nr = if a = r || b = r then c else r in
+              (nl, nr)
             ) acc
           ) (p1.ord <|> p2.ord) freshened_eqr 
         in
@@ -415,10 +415,10 @@ let if_gen cond ps1 ps2 =
       in
 
       let ord_new = List.fold_left (fun acc (c,(a,b)) ->
-          List.map (fun (a', b') ->
-            let na = if a = a' then c else a' in
-            let nb = if b = b' then c else b' in
-            (na, nb)
+          List.map (fun (l, r) ->
+            let nl = if a = l || b = l then c else l in
+            let nr = if a = r || b = r then c else r in
+            (nl, nr)
           ) acc
         ) (p1.ord <|> p2.ord) freshened_eqr 
       in
