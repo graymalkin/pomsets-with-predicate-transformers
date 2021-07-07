@@ -1,5 +1,5 @@
 TOOL = ../_build/default/src/pomsets.exe
-OPTIONS = --tex --complete
+OPTIONS = --tex
 TEX_OPTIONS = --interaction=batchmode
 PREAMBLE = ./latex-template/preamble.tex
 
@@ -20,8 +20,10 @@ tool:
 diagrams/%.tex: %.lit $(TOOL) $(PREAMBLE)
 	@mkdir -p $(dir $@)
 	@cat $(PREAMBLE) > $@
-	$(OCAMLRUNPARAM) $(TOOL) $(OPTIONS) $< >> $@
-	@cd $(dir $@); lualatex $(TEX_OPTIONS) $(notdir $@) > /dev/null
+	$(TOOL) $(OPTIONS) $< >> $@
+
+diagrams/%.pdf: diagrams/%.tex
+	@cd $(dir $@); lualatex $(TEX_OPTIONS) $(notdir $<)
 
 clean:
 	rm -rf diagrams/
