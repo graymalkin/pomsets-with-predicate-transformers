@@ -120,9 +120,11 @@ let total d r =
       List.mem (a, b) r || List.mem (b, a) r
     ) d
   ) d
-
+(* 
 let domain r = List.fold_left (fun acc (a, _) -> a :: acc) [] r
-let codomain r = List.fold_left (fun acc (_, b) -> b :: acc) [] r
+let codomain r = List.fold_left (fun acc (_, b) -> b :: acc) [] r *)
+let domain r = List.fold_left (fun acc e -> acc <|> [e]) [] (List.map fst r)
+let codomain r = List.fold_left (fun acc e -> acc <|> [e]) [] (List.map snd r)
 let field r = domain r <|> codomain r
 
 (** Note: this definition extracts the field from the relation and does not require id inclusion *)

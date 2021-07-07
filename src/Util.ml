@@ -52,6 +52,17 @@ let rec concat_nonempty f = function
 | [] -> raise (Invalid_argument "invariant broken")
 let repeat x n = List.init n (fun _ -> x)
 
+let rm x l = List.filter ((<>) x) l  
+
+let rec permutations = function  
+  | [] -> [[]]
+  | x::[] -> [[x]]
+  | l -> List.fold_left (fun acc x -> acc @ List.map (fun p -> x::p) (permutations (rm x l))) [] l
+
+let rec order_of_list = function
+    [] -> []
+  | l :: ls -> List.map (fun l' -> (l, l')) ls @ (order_of_list ls)
+
 (* File handling utility *)
 let defer_close_in_noerr fh f x =
   let r = f x in

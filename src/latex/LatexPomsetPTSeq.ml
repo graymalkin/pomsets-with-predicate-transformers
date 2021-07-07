@@ -47,23 +47,51 @@ let pp_latex_label fmt = function
 | Fence (o) ->
   Format.fprintf fmt "\\DR[]{%a}[]" pp_latex_mode o
 
-let pp_pomset_node lab pre fmt e = 
-  if simp_formula (pre e) = True
-  then Format.fprintf fmt "\\node (%d) [style=event] {$%a$};" e pp_latex_label (lab e)
-  else Format.fprintf fmt "\\node (%d) [style=event] {$%a \\mid  %a$};" e pp_latex_formula (pre e) pp_latex_label (lab e)
+let pp_pomset_node ?style:(s="event") lab pre fmt e = 
+  if tautology (sub_quis True pre)
+  then Format.fprintf fmt "\\node[label={[style=lableft]%d}] (%d) [style=%s] {$%a$};" e e s pp_latex_label lab
+  else Format.fprintf fmt "\\node[label={[style=lableft]%d}] (%d) [style=%s] {$%a \\mid  %a$};" e e s pp_latex_formula pre pp_latex_label lab
   
 (* prints inner part of pomset tikz picture. *)
 let pp_tikz_pomset fmt p = 
+  Format.fprintf fmt "%% Real events\n";
   List.iter (fun e ->
-    Format.fprintf fmt "%a\n" (pp_pomset_node p.lab p.pre) e
-  ) p.evs;
+    Format.fprintf fmt "%a\n" (pp_pomset_node (p.lab e) (p.pre e)) e
+  ) (real_events p);
+
+  Format.fprintf fmt "%% Phantom events\n";
+  List.iter (fun e ->
+    let e' = snd (List.find (fun (x, _) -> x = e) p.pi) in
+    Format.fprintf fmt "%a\n" (pp_pomset_node ~style:"phevent" (p.lab e') (p.pre e')) e
+  ) (List.sort_uniq (-) (phantom_events p));
+
+  Format.fprintf fmt "%% Dependency order\n";
   List.iter (fun (a, b) ->
     Format.fprintf fmt "\\draw (%d) edge[style=sync] (%d);\n" a b
-  ) (display_order p.ord)
+  ) (display_order p.ord);
+
+  Format.fprintf fmt "%% Program order\n";
+  List.iter (fun (a, b) ->
+    let edge_type =
+      if (List.mem a (phantom_events p) && List.mem b (phantom_events p)) || List.mem a (real_events p) && List.mem b (real_events p)
+      then "draw"
+      else "path"
+    in
+    Format.fprintf fmt "\\%s (%d) edge[style=pox, bend left] (%d);\n" edge_type a b
+  ) (display_order p.po);
+
+  Format.fprintf fmt "%% pi\n";
+  List.iter (fun (a, b) ->
+    Format.fprintf fmt "\\path (%d) edge[style=xo] (%d);\n" a b
+  ) (display_order p.pi)
 
 let pp_pomset fmt p = 
+  Format.fprintf fmt "\\begin{verbatim}\n";
+  Format.fprintf fmt "%a" pp_pomset p;
+  Format.fprintf fmt "\\end{verbatim}\n";
   Format.fprintf fmt "%a\n" (pp_tikz_diagram pp_tikz_pomset ~options:[
       "sibling distance=1.5em"
+    ; "scale=1.5" 
     ; "binary tree layout"
     ; "grow=right"
     ]) p;

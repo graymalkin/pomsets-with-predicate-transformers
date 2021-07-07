@@ -3,8 +3,6 @@ open Z3.Solver
 open Z3.Arithmetic
 open Z3.Boolean
 
-open Util
-
 type event = int
 
 type value = Val of int
@@ -85,7 +83,7 @@ let rec pp_formula fmt = function
 | True -> Format.fprintf fmt "tt"
 | False -> Format.fprintf fmt "ff"
 
-let rec simp_formula f = 
+(* let rec simp_formula f = 
   let go = function
       And (True, f) | And (f, True) -> simp_formula f
     | And (False, _) | And (_, False) -> False
@@ -109,11 +107,11 @@ let rec simp_formula f =
       end
     | f -> f
   in
-  fix go f
+  fix go f *)
 
 let simp_formulae = false
 let pp_formula fmt f =
-  let f = if simp_formulae then simp_formula f else f in
+  (* let f = if simp_formulae then simp_formula f else f in *)
   pp_formula fmt f
 
 let rec formula_map fn = function
@@ -128,7 +126,6 @@ let rec formula_map fn = function
   | Or (f1, f2) -> Or (formula_map fn f1, formula_map fn f2)
   | Implies (f1, f2) -> Implies (formula_map fn f1, formula_map fn f2)
 
-(* TODO: examine implementation *)
 let sub_reg e r = 
   formula_map (function
     | EqExpr (R r', e') when r = r' -> EqExpr (e,e')
@@ -205,7 +202,12 @@ let rec formula_to_z3 ctx rmap = function
     let l, rmapl = formula_to_z3 ctx rmap f1 in
     let r, rmapr = formula_to_z3 ctx rmapl f2 in
     mk_implies ctx l r, rmapr
-| Expr (Eq (e1, e2))
+| Expr (Eq _ as e)
+| Expr (Gt _ as e)
+| Expr (Gte _ as e)
+| Expr (Lt _ as e)
+| Expr (Lte _ as e) ->
+  expr_to_z3 ctx rmap e
 | EqExpr (e1, e2) -> 
   let el, rmapl = expr_to_z3 ctx rmap e1 in
   let er, rmapr = expr_to_z3 ctx rmapl e2 in

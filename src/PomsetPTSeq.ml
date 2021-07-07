@@ -80,6 +80,7 @@ let eq_action = curry @@ function
 
 let is_read   = function Read _ -> true | _ -> false
 let is_write  = function Init | Write _ -> true | _ -> false
+let is_fence  = function Fence _ -> true | _ -> false
 let is_release a = List.mem (mode_of a) [Rel; SC]
 
 let mode_order = [
@@ -133,7 +134,19 @@ type pomsetPT = {
 
   (* This is used to compute final state *)
   smap: (register, value) environment;
+  po: (event, event) relation;
+  pi: (event, event) relation;
 }
+
+let real_events p = List.map fst (List.filter (uncurry (=)) p.pi)
+let phantom_events p = (domain p.pi) <-> (real_events p)
+
+let simple_events p = 
+  List.map fst (List.filter (fun (_,e) ->
+    List.length (List.filter (fun (_, e') -> e = e') p.pi) = 1
+  ) p.pi)
+
+let compound_events evs pi = evs <-> (simple_events pi)
 
 (** Pomset Utils *)
 let eq_pomset p1 p2 =
@@ -151,7 +164,9 @@ let empty_pomset = {
   pt = (fun _ps f -> f);
   term = True;
   ord = [];
-  smap = empty_env
+  smap = empty_env;
+  po = [];
+  pi = []
 }
 
 (* {
@@ -175,7 +190,9 @@ let init_pomset =
     pt = (fun _d f -> sub_locs (V (Val 0)) f |> sub_quis True);
     term = True;
     ord = [];
-    smap = empty_env
+    smap = empty_env;
+    po = [(id, id)];
+    pi = [(id, id)];
   }
 
 let pp_action fmt = function
@@ -192,7 +209,9 @@ let pp_pomset fmt p =
       pp_action (p.lab e)
   ) p.evs;
   Format.fprintf fmt "term: %a\n" pp_formula p.term;
-  Format.fprintf fmt "ord: %a\n" (PPRelation.pp_relation pp_int pp_int) p.ord
+  Format.fprintf fmt "ord: %a\n" (PPRelation.pp_relation pp_int pp_int) p.ord;
+  Format.fprintf fmt "pi:  %a\n" (PPRelation.pp_relation pp_int pp_int) p.pi;
+  Format.fprintf fmt "po:  %a\n" (PPRelation.pp_relation pp_int pp_int) p.po
 
 (* M2 *)
 let wf_lab p = complete p.evs p.lab
@@ -245,12 +264,35 @@ let pomsets_seq_gen ps1 ps2 =
         ) (pairings p1.evs p2.evs) 
       in
 
+
       eqrs |> List.map (fun eqr ->
         let freshened_eqr = List.map (fun eq -> (fresh_id (), eq)) eqr in
-        let evs_new = List.fold_left (fun acc (c, (a,b)) ->
-            c :: (acc <-> [a;b])
-          ) (p1.evs <|> p2.evs) freshened_eqr
+        let pi' = List.fold_left (fun pi (c, (a, b)) -> 
+          (c, c) :: List.map (fun (e1, e2) -> 
+            if e2 = a || e2 = b 
+            then e1, c
+            else e1, e2
+          ) pi
+        ) (p1.pi <|> p2.pi) freshened_eqr in
+
+        let pi_inv x = List.map fst (List.filter (fun (_, e) -> e = x) pi') in
+        let pi_po_ext = cross 
+          (List.flatten (List.map pi_inv p1.evs))
+          (List.flatten (List.map pi_inv p2.evs))
         in
+        let phantom_ext = List.map snd freshened_eqr in
+        let po' = p1.po <|> p2.po <|> pi_po_ext <|> phantom_ext in
+
+        let evs_p1 = List.fold_left (fun acc (c, (a,b)) ->
+            c :: (acc <-> [a;b])
+          ) p1.evs freshened_eqr
+        in
+        let evs_p2 = List.fold_left (fun acc (c, (a,b)) ->
+            c :: (acc <-> [a;b])
+          ) p2.evs freshened_eqr
+        in
+
+        let evs_new = evs_p1 <|> evs_p2 in
         let lab_new c = 
           if (List.exists (fun (c', _) -> c=c') freshened_eqr)
           then (fun (a, _) -> p1.lab a) (List.assoc c freshened_eqr) 
@@ -258,7 +300,7 @@ let pomsets_seq_gen ps1 ps2 =
             (* Check for belt and braces, this labelling funciton should never be 
                called with old event ids *)
             if (List.exists (fun (_, (a, b)) -> a = c || b = c) freshened_eqr)
-            then raise (Invalid_argument "panic (HAPtst)")
+            then raise (Invalid_argument ("panic (HAPtst)" ^ (string_of_int c)))
             else join_env p1.lab p2.lab c
           )
         in
@@ -272,27 +314,27 @@ let pomsets_seq_gen ps1 ps2 =
           ) (p1.ord <|> p2.ord) freshened_eqr 
         in
 
+        let pt_map1 e = try fst (List.assoc e freshened_eqr) with Not_found -> e in
+        let pt_map2 e = try snd (List.assoc e freshened_eqr) with Not_found -> e in
+
         (* TODO: This misses rules i3a-c, and might generate down-useful events which are
             incompatible with dep. *)
-        let down_set = evs_new <-> (List.filter (fun e -> lab_new e = Init)) evs_new in
-        let down_set_r = List.filter (is_read <.> lab_new) down_set in
-        let down_set_w = List.filter (is_write <.> lab_new) down_set in
-        let down_useful = cross down_set_r down_set_w
+        (* let down_set = evs_new <-> (List.filter (fun e -> lab_new e = Init)) evs_new in *)
+        let down_set_r1 = List.filter (is_read <.> lab_new) evs_p1 in
+        let down_set_w1 = List.filter (is_write <.> lab_new) evs_p2 in
+        let down_set_r2 = List.filter (is_read <.> lab_new) evs_p2 in
+        let down_set_w2 = List.filter (is_write <.> lab_new) evs_p1 |> List.filter (fun e -> lab_new e <> Init) in
+        let down_useful = ((cross down_set_r1 down_set_w1) <|> (cross down_set_r2 down_set_w2))
           |> powerset
           |> List.map (fun du -> transitive_closure ~refl:true (ord_new <|> du))
           |> List.filter partial_order
         in
 
-        debug "%a\n" (pp_set (pp_relation pp_int pp_int)) down_useful;
-
-        let pt_map1 e = try fst (List.assoc e freshened_eqr) with Not_found -> e in
-        let pt_map2 e = try snd (List.assoc e freshened_eqr) with Not_found -> e in
-
         down_useful |> List.map (fun du -> 
           (* Note: this is an over-approximation of the read sets. If we could inspect the predicate
           transformers then we could generate a precise set of reads which could "interfere" with c 
           in the definition of down. *)
-          let read_sets = powerset (List.filter (is_read <.> lab_new) evs_new) in
+          let read_sets = powerset (List.filter (is_read <.> lab_new) evs_p1) in
           read_sets |> List.map (fun rs ->
             let down e = List.find_all (fun c -> List.mem (c, e) du && c <> e) rs in
             (* We have confirmed with James that p1.evs is a good index for the use of the predicate
@@ -330,6 +372,8 @@ let pomsets_seq_gen ps1 ps2 =
 
               (* It is important that we look in the second environment first *)
               smap = join_env p2.smap p1.smap;
+              po = po';
+              pi = pi'
             }
           )
         )
@@ -338,6 +382,7 @@ let pomsets_seq_gen ps1 ps2 =
   )
 
 let if_gen cond ps1 ps2 =
+  info "IF(%a,PS1, PS2)\n%!" pp_formula cond;
   List.flatten ((cross ps1 ps2) |> List.map (fun (p1, p2) -> 
     let eqrs = List.filter (
         List.for_all (fun (a, b) -> eq_action (p1.lab a) (p2.lab b))
@@ -345,6 +390,14 @@ let if_gen cond ps1 ps2 =
     in
     eqrs |> List.map (fun eqr ->
       let freshened_eqr = List.map (fun eq -> (fresh_id (), eq)) eqr in
+      let pi' = List.fold_left (fun pi (c, (a, b)) -> 
+        (c, c) :: List.map (fun (e1, e2) -> 
+          if e2 = a || e2 = b 
+          then e1, c
+          else e1, e2
+        ) pi
+      ) (p1.pi <|> p2.pi) freshened_eqr in
+
       let evs_new = List.fold_left (fun acc (c, (a,b)) ->
           c :: (acc <-> [a;b])
         ) (p1.evs <|> p2.evs) freshened_eqr
@@ -404,6 +457,8 @@ let if_gen cond ps1 ps2 =
 
         (* It is important that we look in the second environment first *)
         smap = join_env p2.smap p1.smap;
+        po = p1.po <|> p2.po;
+        pi = pi'
       }
     ) 
   ))
@@ -411,6 +466,7 @@ let if_gen cond ps1 ps2 =
 (* This is for top level parallel only, not intended for use with code 
    sequenced after the parallel.  *)
 let par_gen ps1 ps2 = 
+  info "PAR(PS1, PS2) %d\n%!" ((List.length ps1) * (List.length ps2));
   (* We assume p1 and p2 to be disjoint *)
   (cross ps1 ps2) |> List.map (fun (p1, p2) -> 
     {
@@ -428,6 +484,8 @@ let par_gen ps1 ps2 =
       ord = p1.ord <|> p2.ord;
 
       smap = join_env p1.smap p2.smap;
+      po = p1.po <|> p2.po;
+      pi = p1.pi <|> p2.pi;
     }
   )
 
@@ -448,10 +506,12 @@ let read_gen vs r x mode =
       pt = (fun d f ->
         if List.mem id d (* E n D != empty *)
         then Implies (EqExpr (V v, R r), f)                         (* R4a *)
-        else Implies (Or (EqExpr (V v, R r), EqVar (x, R r)), f)    (* R4b *)
+        else Implies (Or (EqVar (x, R r), EqExpr (R r, V v)), f)    (* R4b *)
       );
       term = True;                                                  (* R5a *)
       smap = bind r v empty_pomset.smap;
+      po = [(id, id)];
+      pi = [(id, id)]
     }
   ) <|> [
     {
@@ -477,6 +537,8 @@ let write_gen vs x mode m =
         |> sub_qui (EqExpr (m, V v)) (Qui x)
       );
       term = EqExpr (m, V v);                                       (* W5a *)
+      po = [(id, id)];
+      pi = [(id, id)]
     }
   ) <|> [
     {
@@ -526,16 +588,29 @@ let grow_pomset (rf : (event * event) list) p =
   m7c
 
 let interp vs check_complete prog = 
+  let filter ps = List.filter (fun p -> 
+       not (unsatisfiable p.term) 
+    && List.for_all (fun e -> not (unsatisfiable (sub_quis True @@ p.pre e))) p.evs
+  ) ps in
   let rec go vs = function
     Initialisation -> [init_pomset]
   | Skip -> [empty_pomset]
   | Assign (r, e) -> assign_gen r e
   | Load (r, x, mode) -> read_gen vs r x mode
   | Store (x, mode, e) -> write_gen vs x mode e
-  | Sequence (p1, p2) -> pomsets_seq_gen (go vs p1) (go vs p2)
+  | Sequence (p1, p2) -> 
+    pomsets_seq_gen 
+      (filter (go vs p1))
+      (filter (go vs p2))
   (* Note: we expect e to be a binary expr. We do not coerce as is expected in the paper. *)
-  | Ite (e, p1, p2) -> if_gen (Expr e) (go vs p1) (go vs p2)
-  | Par (p1, p2) -> par_gen (go vs p1) (go vs p2)
+  | Ite (e, p1, p2) ->
+    if_gen (Expr e)
+      (filter (go vs p1))
+      (filter (go vs p2))
+  | Par (p1, p2) ->
+    par_gen 
+      (filter (go vs p1))
+      (filter (go vs p2))
   in
   let prog = if check_complete then Sequence (Initialisation, prog) else prog in
   let ps = go vs prog in

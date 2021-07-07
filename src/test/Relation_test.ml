@@ -134,6 +134,12 @@ let test_acyclic _ =
   assert_bool "as" (acyclic [(1,2); (2,3)]);
   assert_bool "at" (not @@ acyclic [(1,2); (2,1)])
 
+let test_domain _ = 
+  assert_equal [3;4;7] (domain [(3,4); (4,5); (7,6); (4,5)])
+
+let test_codomain _ = 
+  assert_equal [4;5;6] (codomain [(3,4); (4,5); (7,6); (4,5)])
+
 let relation_operator_basic =
   "Relation operators basic tests" >::: [
     "union idempotent" >:: test_union_idempotent
@@ -159,4 +165,6 @@ let relation_operator_basic =
   ; "transitive_closure" >:: test_transitve_closure
   ; "total" >:: test_total
   ; "acyclic" >:: test_acyclic
+  ; "domain" >:: test_domain
+  ; "codomain" >:: test_codomain
 ]

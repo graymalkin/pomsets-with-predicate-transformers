@@ -5,6 +5,9 @@
 
 open Preliminaries
 open PomsetPTSeq
+open PPRelation
+
+open Util
 
 let check_outcomes = ref false
 let check_complete = ref false
@@ -39,7 +42,14 @@ let check = function
 
 let dedup ps = 
   List.sort_uniq (fun p1 p2 -> 
-    let lcmp = compare (List.map p1.lab p1.evs) (List.map p2.lab p2.evs) in
+    let phlab p e = 
+      let e' = snd (List.find (fun (x, _) -> x = e) p.pi) in
+      p.lab e'
+    in
+    let lcmp = compare 
+      ((List.map (phlab p1) (phantom_events p1)) @ (List.map p1.lab (simple_events p1))) 
+      ((List.map (phlab p2) (phantom_events p2)) @ (List.map p2.lab (simple_events p2))) 
+    in
     if lcmp = 0
     then compare p1.ord p2.ord
     else lcmp
@@ -48,22 +58,35 @@ let dedup ps =
 let pomsetpt (config, ast, outcomes) = 
   let config = Option.value ~default:RunConfig.default_configuration config in
   let vs = config.RunConfig.values in
+  info "Setup complete\n%!";
   let ps = interp vs !check_complete (ASTToPomsetPTSeq.convert_program ast) in
-  if !check_outcomes then 
-    ignore @@ Option.map (List.iter (function
-        (AST.Allowed (_b,_os,c) as o)
-      | (AST.Forbidden (_b,_os,c) as o) -> 
-        ignore @@ Option.map (Format.printf "%s") c;
-        if check o ps
-        then Format.printf " (pass)\n"
-        else Format.printf " (fail)\n"
-    )) outcomes;
-  if not !print_latex && !print_pomsets then (
-    List.iter (Format.fprintf Format.std_formatter "%a\n" PomsetPTSeq.pp_pomset) ps
-  );
-  if !print_size then Format.printf "%d pomsets\n" (List.length ps);
+  info "Interpretation complete\n%!";
+  if !print_size then Format.printf "%d pomsets (%d after deduping)\n" (List.length ps) (List.length (dedup ps));
   if !print_latex then 
     PrintLatexDoc.pp_document Format.std_formatter config ast LatexPomsetPTSeq.pp_pomset (dedup ps);
+  info "Checking RC11 consistency\n%!";
+  if !check_complete
+  then
+  begin
+    let rc11_consistent = List.flatten @@ List.map Rc11.gen_rc11_exns (dedup ps) in
+    info "RC11 consistency complete\n%!";
+    if !print_size then Format.printf "%d RC11 Consistent Pomsets\n" (List.length rc11_consistent);
+    if (not !print_latex) && !print_pomsets then
+      List.iter (fun (p, co, rf) -> 
+        Format.fprintf Format.std_formatter "%a" PomsetPTSeq.pp_pomset p;
+        Format.fprintf Format.std_formatter "rf:  %a\n" (pp_relation pp_int pp_int) rf;
+        Format.fprintf Format.std_formatter "co:  %a\n\n" (pp_relation pp_int pp_int) co
+      ) rc11_consistent;
+    if !check_outcomes then 
+      ignore @@ Option.map (List.iter (function
+        (AST.Allowed (_b,_os,c) as o)
+      | (AST.Forbidden (_b,_os,c) as o) -> 
+        ignore @@ Option.map (Format.printf "%s ") c;
+        if check o (List.map (fun (p,_,_) -> p) rc11_consistent)
+        then Format.printf "(pass)\n"
+        else Format.printf "(fail)\n"
+      )) outcomes;
+  end;
   if !print_time then Format.printf "Execution time: %fs\n" (Sys.time ());
   ()
 

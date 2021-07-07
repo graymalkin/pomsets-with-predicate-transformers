@@ -86,6 +86,10 @@ let test_expr_not_taut _ =
   let f = EqExpr (R (Reg "r1"), V (Val 0)) in
   assert_equal false (tautology f)
 
+let test_negative_int _ =
+  let f = EqExpr (V (Val (-1)), V (Val (-1))) in
+  assert_equal true (tautology f)
+
 let pomset_pt_formula_suite =
   "PomsetPT formula operations" >::: [
     "test_eval_entails_lhs_false" >:: test_eval_entails_lhs_false
@@ -104,5 +108,6 @@ let pomset_pt_formula_suite =
   ; "test_eval_formula_neg" >:: test_eval_formula_neg
   ; "test_not_taut" >:: test_not_taut
   ; "test_expr_not_taut" >:: test_expr_not_taut
+  ; "test_negative_int" >:: test_negative_int
   ]
 
