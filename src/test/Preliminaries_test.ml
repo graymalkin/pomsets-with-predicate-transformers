@@ -90,6 +90,18 @@ let test_negative_int _ =
   let f = EqExpr (V (Val (-1)), V (Val (-1))) in
   assert_equal true (tautology f)
 
+let test_merge_precond _ = 
+  let f = 
+    Implies (
+      Or (EqExpr (R (Reg "r1"), V (Val 1)), EqVar (Ref "x", R (Reg "r1"))),
+      Implies (
+        Or (EqExpr (R (Reg "r2"), V (Val 1)), EqVar (Ref "x", R (Reg "r2"))),
+        And (EqExpr (R (Reg "r1"), R (Reg "r2")), EqExpr (V (Val 1), V (Val 1)))
+      )
+    )
+  in
+  assert_equal false (tautology f)
+
 let pomset_pt_formula_suite =
   "PomsetPT formula operations" >::: [
     "test_eval_entails_lhs_false" >:: test_eval_entails_lhs_false
@@ -109,5 +121,6 @@ let pomset_pt_formula_suite =
   ; "test_not_taut" >:: test_not_taut
   ; "test_expr_not_taut" >:: test_expr_not_taut
   ; "test_negative_int" >:: test_negative_int
+  ; "test_merge_precond" >:: test_merge_precond
   ]
 
