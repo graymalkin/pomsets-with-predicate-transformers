@@ -17,7 +17,10 @@ let print_size = ref false
 let print_time = ref false
 
 let check_outcome env bexpr = 
-  let trans_env r = let Val v = env (Reg r) in v in
+  let trans_env r = try
+    let Val v = env (Reg r) in v 
+    with Unbound -> 0 | Not_found -> failwith ("can't find " ^ r)
+  in
   AST.eval_bexpr (trans_env) bexpr
 
 let check = function 
@@ -55,6 +58,9 @@ let dedup ps =
     else lcmp
   ) ps
 
+let pass = if Unix.isatty Unix.stdout then "\x1b[1;32mpass\x1b[0m" else "pass"
+let fail = if Unix.isatty Unix.stdout then "\x1b[1;31mfail\x1b[0m" else "fail"
+
 let pomsetpt (config, ast, outcomes) = 
   let config = Option.value ~default:RunConfig.default_configuration config in
   let vs = config.RunConfig.values in
@@ -65,6 +71,8 @@ let pomsetpt (config, ast, outcomes) =
   if !print_latex then 
     PrintLatexDoc.pp_document Format.std_formatter config ast LatexPomsetPTSeq.pp_pomset (dedup ps);
   info "Checking RC11 consistency\n%!";
+  if not !check_complete && not !print_latex && !print_pomsets then
+    List.iter (Format.fprintf Format.std_formatter "%a\n" pp_pomset) (dedup ps);
   if !check_complete
   then
   begin
@@ -83,8 +91,8 @@ let pomsetpt (config, ast, outcomes) =
       | (AST.Forbidden (_b,_os,c) as o) -> 
         ignore @@ Option.map (Format.printf "%s ") c;
         if check o (List.map (fun (p,_,_) -> p) rc11_consistent)
-        then Format.printf "(pass)\n"
-        else Format.printf "(fail)\n"
+        then Format.printf "(%s)\n" pass
+        else Format.printf "(%s)\n" fail
       )) outcomes;
   end;
   if !print_time then Format.printf "Execution time: %fs\n" (Sys.time ());

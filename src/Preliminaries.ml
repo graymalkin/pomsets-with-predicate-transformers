@@ -33,6 +33,10 @@ let pp_quiescence fmt (Qui x) = Format.fprintf fmt "Q(%a)" pp_mem_ref x
 type expr = 
   V of value
 | R of register
+| Add of expr * expr
+| Sub of expr * expr
+| Mul of expr * expr
+| Div of expr * expr
 | Eq of expr * expr
 | Gt of expr * expr
 | Gte of expr * expr
@@ -43,6 +47,10 @@ type expr =
 let rec eval_expr env = function
   V (Val v) -> v
 | R (Reg r) -> env r
+| Add (e1, e2) -> eval_expr env e1 + eval_expr env e2
+| Sub (e1, e2) -> eval_expr env e1 - eval_expr env e2
+| Mul (e1, e2) -> eval_expr env e1 * eval_expr env e2
+| Div (e1, e2) -> eval_expr env e1 / eval_expr env e2
 | Eq (e1, e2) -> if eval_expr env e1 = eval_expr env e2 then 1 else 0
 | Gt (e1, e2) -> if eval_expr env e1 > eval_expr env e2 then 1 else 0
 | Gte (e1, e2) -> if eval_expr env e1 >= eval_expr env e2 then 1 else 0
@@ -52,6 +60,10 @@ let rec eval_expr env = function
 let rec pp_expr fmt = function
   V (Val v) -> Format.fprintf fmt "%d" v
 | R (Reg r) -> Format.fprintf fmt "%s" r
+| Add (e1, e2) -> Format.fprintf fmt "%a + %a" pp_expr e1 pp_expr e2
+| Sub (e1, e2) -> Format.fprintf fmt "%a - %a" pp_expr e1 pp_expr e2
+| Mul (e1, e2) -> Format.fprintf fmt "(%a * %a)" pp_expr e1 pp_expr e2
+| Div (e1, e2) -> Format.fprintf fmt "(%a / %a)" pp_expr e1 pp_expr e2
 | Eq (e1, e2) -> Format.fprintf fmt "(%a = %a)" pp_expr e1 pp_expr e2
 | Gt (e1, e2) -> Format.fprintf fmt "(%a > %a)" pp_expr e1 pp_expr e2
 | Gte (e1, e2) -> Format.fprintf fmt "(%a >= %a)" pp_expr e1 pp_expr e2
@@ -168,6 +180,22 @@ let rec expr_to_z3 ctx rmap =
         let rvar = Integer.mk_const ctx rsym in
         rvar, ((r, rvar) :: rmap)
     )
+  | Add (e1, e2) -> 
+    let el, rmapl = expr_to_z3 ctx rmap e1 in
+    let er, rmapr = expr_to_z3 ctx rmapl e2 in
+    mk_add ctx [el; er], rmapr
+  | Sub (e1, e2) -> 
+    let el, rmapl = expr_to_z3 ctx rmap e1 in
+    let er, rmapr = expr_to_z3 ctx rmapl e2 in
+    mk_sub ctx [el; er], rmapr
+  | Mul (e1, e2) -> 
+    let el, rmapl = expr_to_z3 ctx rmap e1 in
+    let er, rmapr = expr_to_z3 ctx rmapl e2 in
+    mk_mul ctx [el; er], rmapr
+  | Div (e1, e2) -> 
+    let el, rmapl = expr_to_z3 ctx rmap e1 in
+    let er, rmapr = expr_to_z3 ctx rmapl e2 in
+    mk_div ctx el er, rmapr
   | Eq (e1, e2) -> 
     let el, rmapl = expr_to_z3 ctx rmap e1 in
     let er, rmapr = expr_to_z3 ctx rmapl e2 in

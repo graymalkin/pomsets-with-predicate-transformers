@@ -1,10 +1,13 @@
 module Pre = Preliminaries
 module P = PomsetPTSeq
 
-let convert_expr = function
+let rec convert_expr = function
   AST.Number n -> Pre.V (Pre.Val n)
 | AST.Register r -> Pre.R (Pre.Reg r)
-| _ -> raise (Invalid_argument "expression construct not supported by P (YnNjCW)")
+| AST.Addition (e1, e2) -> Pre.Add (convert_expr e1, convert_expr e2)
+| AST.Subtraction (e1, e2) -> Pre.Sub (convert_expr e1, convert_expr e2)
+| AST.Multiplication (e1, e2) -> Pre.Mul (convert_expr e1, convert_expr e2)
+| AST.Division (e1, e2) -> Pre.Div (convert_expr e1, convert_expr e2)
 
 (* TODO: this is probably too limitted even for MVP *)
 let convert_bexpr = function

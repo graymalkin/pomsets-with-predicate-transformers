@@ -6,6 +6,10 @@ open LatexCommon
 let rec pp_latex_expr fmt = function
   V (Val v) -> Format.fprintf fmt "%d" v
 | R (Reg r) -> Format.fprintf fmt "%s" r
+| Add (e1, e2) -> Format.fprintf fmt "%a + %a" pp_latex_expr e1 pp_latex_expr e2
+| Sub (e1, e2) -> Format.fprintf fmt "%a - %a" pp_latex_expr e1 pp_latex_expr e2
+| Mul (e1, e2) -> Format.fprintf fmt "(%a * %a)" pp_latex_expr e1 pp_latex_expr e2
+| Div (e1, e2) -> Format.fprintf fmt "(%a / %a)" pp_latex_expr e1 pp_latex_expr e2
 | Eq (e1, e2) -> Format.fprintf fmt "(%a = %a)" pp_latex_expr e1 pp_latex_expr e2
 | Gt (e1, e2) -> Format.fprintf fmt "(%a \\gt %a)" pp_latex_expr e1 pp_latex_expr e2
 | Gte (e1, e2) -> Format.fprintf fmt "(%a \\geq %a)" pp_latex_expr e1 pp_latex_expr e2
@@ -96,4 +100,5 @@ let pp_pomset fmt p =
     ; "grow=right"
     ]) p;
   Format.fprintf fmt "\\aTerm = $ %a $\n\n" pp_latex_formula p.term;
+  Format.fprintf fmt "Complete: %b\n\n" (complete { p with pre = (fun e -> sub_quis True (p.pre e)); } );
   Format.fprintf fmt "\\noindent\\rule{6cm}{0.4pt}\n\n"

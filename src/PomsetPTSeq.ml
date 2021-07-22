@@ -9,6 +9,8 @@ open Preliminaries
 open Relation
 open Util
 
+exception Unbound
+
 (** Preliminaries *)
 (* These prelims are specialised for the sequential version of the semantics. *)
 type mode = Rlx | Rel | Acq | SC
@@ -519,6 +521,7 @@ let read_gen vs r x mode =
       pt = (fun _d f -> f);                                         (* R4c *)
              (* if mode =] Acq then term = ff *)
       term = if mord Acq mode then False else True;                 (* R5a,b *)
+      smap = (fun r' -> if r = r' then raise Unbound else raise Not_found)
     }
   ]
 
