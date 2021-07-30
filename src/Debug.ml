@@ -9,7 +9,7 @@ let log_times = ref false
 let info_fmt = ref discard_fmt
 let debug_fmt = ref discard_fmt
 let warn_fmt = ref discard_fmt
-let error_fmt = ref discard_fmt
+let error_fmt = ref Format.err_formatter
 
 let log level fmt fmt_spec =
   Format.fprintf fmt "[%-5s] " level;
