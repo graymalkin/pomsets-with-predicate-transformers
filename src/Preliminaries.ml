@@ -13,12 +13,14 @@ let pp_value fmt (Val v) = Format.fprintf fmt "%d" v
 type register = Reg of string 
 [@@deriving show { with_path = false }]
 
+let register_from_id i = Reg (Format.sprintf "s_%d" i)
+
 let pp_register fmt (Reg r) = Format.fprintf fmt "%s" r
 
 let fresh_register =
   let reg_id = ref 0 in
   function () ->
-    incr reg_id; Reg ("s_" ^ (string_of_int !reg_id))
+    incr reg_id; Reg ("f_" ^ (string_of_int !reg_id))
 
 type mem_ref = Ref of string
 [@@deriving show { with_path = false }]
@@ -155,9 +157,17 @@ let rec formula_map fn = function
   | Or (f1, f2) -> Or (formula_map fn f1, formula_map fn f2)
   | Implies (f1, f2) -> Implies (formula_map fn f1, formula_map fn f2)
 
+let sub_reg_e e r = 
+  expr_map (function
+      R r' when r = r' -> e
+    | ex -> ex
+  )
+
 let sub_reg e r = 
   formula_map (function
-    | EqExpr (R r', e') when r = r' -> EqExpr (e,e')
+      Expr e' -> Expr (sub_reg_e e r e')
+    | EqExpr (el, er) -> EqExpr (sub_reg_e e r el, sub_reg_e e r er)
+    | EqVar (v, e') -> EqVar (v, sub_reg_e e r e')
     | f -> f
   )
 

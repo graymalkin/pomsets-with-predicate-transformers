@@ -266,9 +266,13 @@ let pomsets_seq_gen ps1 ps2 =
         ) (pairings p1.evs p2.evs) 
       in
 
-
       eqrs |> List.map (fun eqr ->
         let freshened_eqr = List.map (fun eq -> (fresh_id (), eq)) eqr in
+        let merge_registers = List.fold_left (fun acc (c, (a, b)) ->
+          let sa, sb, sc = register_from_id a, register_from_id b, register_from_id c in
+          (fun f -> f |> sub_reg (R sc) sa |> sub_reg (R sc) sb |> acc)
+        ) Util.id freshened_eqr 
+        in
         let pi' = List.fold_left (fun pi (c, (a, b)) -> 
           (c, c) :: List.map (fun (e1, e2) -> 
             if e2 = a || e2 = b 
@@ -332,6 +336,13 @@ let pomsets_seq_gen ps1 ps2 =
           |> List.filter partial_order
         in
 
+        let p1pt d f = merge_registers (p1.pt d f) in
+        let p2pt d f = merge_registers (p2.pt d f) in
+        let p1pre e = merge_registers (p1.pre e) in
+        let p2pre e = merge_registers (p2.pre e) in
+        let p1term = merge_registers p1.term in
+        let p2term = merge_registers p2.term in
+
         down_useful |> List.map (fun du -> 
           (* Note: this is an over-approximation of the read sets. If we could inspect the predicate
           transformers then we could generate a precise set of reads which could "interfere" with c 
@@ -343,10 +354,10 @@ let pomsets_seq_gen ps1 ps2 =
                transformer *)
             let k2' e =
               if is_read (lab_new e) 
-              then p1.pt (List.map pt_map1 p1.evs) (p2.pre (pt_map2 e))
-              else p1.pt (down e) (p2.pre (pt_map2 e))
+              then p1pt (List.map pt_map1 p1.evs) (p2pre (pt_map2 e))
+              else p1pt (down e) (p2pre (pt_map2 e))
             in
-            let tick1 e = if is_release (lab_new e) then p1.term else True in
+            let tick1 e = if is_release (lab_new e) then p1term else True in
 
             (* eqr is used to map ids from p1 into ids to p2 to generate merge opportunities *)
             {
@@ -356,20 +367,20 @@ let pomsets_seq_gen ps1 ps2 =
               pre = (fun e ->
                 assert (not (List.exists (fun (_, (a, b)) -> a = e || b = e) freshened_eqr));
                 if List.mem e (List.map fst freshened_eqr)
-                then And (Or (p1.pre (pt_map1 e), k2' e), tick1 e)  (* S3c *)
+                then And (Or (p1pre (pt_map1 e), k2' e), tick1 e)  (* S3c *)
                 else (
                   if List.mem e p1.evs
-                  then p1.pre e                                     (* S3a *)
+                  then p1pre e                                     (* S3a *)
                   else And (k2' e, tick1 e)                         (* S3b *)
                 )
               );
 
               pt = (fun d f ->                                      (* S4  *)
-                p1.pt (List.map pt_map1 d) (p2.pt (List.map pt_map2 d) f)
+                p1pt (List.map pt_map1 d) (p2pt (List.map pt_map2 d) f)
               );
 
               (* We have confirmed with James that this is E_1 is a good index *)
-              term = And (p1.term, p1.pt p1.evs p2.term);           (* S5  *)
+              term = And (p1term, p1pt p1.evs p2term);           (* S5  *)
               ord = du;                                             (* S6  *)
 
               (* It is important that we look in the second environment first *)
@@ -392,6 +403,12 @@ let if_gen cond ps1 ps2 =
     in
     eqrs |> List.map (fun eqr ->
       let freshened_eqr = List.map (fun eq -> (fresh_id (), eq)) eqr in
+      let merge_registers = List.fold_left (fun acc (c, (a, b)) ->
+        let sa, sb, sc = register_from_id a, register_from_id b, register_from_id c in
+        (fun f -> f |> sub_reg (R sc) sa |> sub_reg (R sc) sb |> acc)
+      ) Util.id freshened_eqr 
+      in
+
       let pi' = List.fold_left (fun pi (c, (a, b)) -> 
         (c, c) :: List.map (fun (e1, e2) -> 
           if e2 = a || e2 = b 
@@ -427,6 +444,12 @@ let if_gen cond ps1 ps2 =
 
       let pt_map1 e = try fst (List.assoc e freshened_eqr) with Not_found -> e in
       let pt_map2 e = try snd (List.assoc e freshened_eqr) with Not_found -> e in
+      let p1pt d f = merge_registers (p1.pt d f) in
+      let p2pt d f = merge_registers (p2.pt d f) in
+      let p1pre e = merge_registers (p1.pre e) in
+      let p2pre e = merge_registers (p2.pre e) in
+      let p1term = merge_registers p1.term in
+      let p2term = merge_registers p2.term in
 
       {
         evs = evs_new;                                              (* I1  *)
@@ -436,25 +459,25 @@ let if_gen cond ps1 ps2 =
           assert (not (List.exists (fun (_, (a, b)) -> a = e || b = e) freshened_eqr));
           if List.mem e (List.map fst freshened_eqr)
           then Or (                                                 (* I3c *)
-            And (cond, p1.pre (pt_map1 e)),
-            And (Not cond, p2.pre (pt_map2 e))
+            And (cond, p1pre (pt_map1 e)),
+            And (Not cond, p2pre (pt_map2 e))
           )
           else (
             (* We don't need to use the pt_map because we know we're not in eqr *)
             if List.mem e p1.evs
-            then And (cond, p1.pre e)                               (* I3a *)
-            else And (Not cond, p2.pre e)                           (* I3b *)
+            then And (cond, p1pre e)                               (* I3a *)
+            else And (Not cond, p2pre e)                           (* I3b *)
           )
         ); 
       
         pt = (fun d f ->                                            (* I4  *)
           Or (
-            And (cond, p1.pt (List.map pt_map1 d) f),
-            And (Not cond, p2.pt (List.map pt_map2 d) f)
+            And (cond, p1pt (List.map pt_map1 d) f),
+            And (Not cond, p2pt (List.map pt_map2 d) f)
           )
         );
         
-        term = Or (And (cond, p1.term), And (Not cond, p2.term));   (* I5  *)
+        term = Or (And (cond, p1term), And (Not cond, p2term));   (* I5  *)
         ord = ord_new;                                              (* I6  *)
 
         (* It is important that we look in the second environment first *)
@@ -499,6 +522,7 @@ let read_gen vs r x mode =
   info "%a := %a\n%!" pp_register r pp_mem_ref x;
   vs |> List.map (fun v ->
     let id = fresh_id () in
+    let se = register_from_id id in
     let v = Val v in
     {
       empty_pomset with
@@ -507,8 +531,8 @@ let read_gen vs r x mode =
       pre = bind id (Q (Qui x)) empty_env;                          (* R3  *)
       pt = (fun d f ->
         if List.mem id d (* E n D != empty *)
-        then Implies (EqExpr (V v, R r), f)                         (* R4a *)
-        else Implies (Or (EqVar (x, R r), EqExpr (R r, V v)), f)    (* R4b *)
+        then sub_reg (R se) r (Implies (EqExpr (V v, R r), f))                         (* R4a *)
+        else sub_reg (R se) r (Implies (Or (EqVar (x, R r), EqExpr (R r, V v)), f))    (* R4b *)
       );
       term = True;                                                  (* R5a *)
       smap = bind r v empty_pomset.smap;
@@ -516,9 +540,10 @@ let read_gen vs r x mode =
       pi = [(id, id)]
     }
   ) <|> [
+    let se = fresh_register () in
     {
       empty_pomset with
-      pt = (fun _d f -> f);                                         (* R4c *)
+      pt = (fun _d f -> sub_reg (R se) r f);                        (* R4c *)
              (* if mode =] Acq then term = ff *)
       term = if mord Acq mode then False else True;                 (* R5a,b *)
       smap = (fun r' -> if r = r' then raise Unbound else raise Not_found)
