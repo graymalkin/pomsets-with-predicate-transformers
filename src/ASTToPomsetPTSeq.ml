@@ -9,13 +9,13 @@ let rec convert_expr = function
 | AST.Multiplication (e1, e2) -> Pre.Mul (convert_expr e1, convert_expr e2)
 | AST.Division (e1, e2) -> Pre.Div (convert_expr e1, convert_expr e2)
 
-(* TODO: this is probably too limitted even for MVP *)
-let convert_bexpr = function
+let rec convert_bexpr = function
   AST.Equality (e1, e2) -> Pre.Eq (convert_expr e1, convert_expr e2)
 | AST.Gt (e1, e2) -> Pre.Gt (convert_expr e1, convert_expr e2)
 | AST.Gte (e1, e2) -> Pre.Gte (convert_expr e1, convert_expr e2)
 | AST.Lt (e1, e2) -> Pre.Lt (convert_expr e1, convert_expr e2)
 | AST.Lte (e1, e2) -> Pre.Lte (convert_expr e1, convert_expr e2)
+| AST.Negation e -> Pre.Neg (convert_bexpr e)
 | _ -> raise (Invalid_argument "binary expression not supported by P (2Yk1PK)")
 
 let convert_access_ordering = function

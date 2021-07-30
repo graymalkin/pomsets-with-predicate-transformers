@@ -42,6 +42,7 @@ type expr =
 | Gte of expr * expr
 | Lt of expr * expr
 | Lte of expr * expr
+| Neg of expr
 [@@deriving show { with_path = false }]
 
 let rec eval_expr env = function
@@ -56,6 +57,7 @@ let rec eval_expr env = function
 | Gte (e1, e2) -> if eval_expr env e1 >= eval_expr env e2 then 1 else 0
 | Lt (e1, e2) -> if eval_expr env e1 < eval_expr env e2 then 1 else 0
 | Lte (e1, e2) -> if eval_expr env e1 <= eval_expr env e2 then 1 else 0
+| Neg e -> if eval_expr env e = 0 then 1 else 0
 
 let rec pp_expr fmt = function
   V (Val v) -> Format.fprintf fmt "%d" v
@@ -69,6 +71,21 @@ let rec pp_expr fmt = function
 | Gte (e1, e2) -> Format.fprintf fmt "(%a >= %a)" pp_expr e1 pp_expr e2
 | Lt (e1, e2) -> Format.fprintf fmt "(%a < %a)" pp_expr e1 pp_expr e2
 | Lte (e1, e2) -> Format.fprintf fmt "(%a <= %a)" pp_expr e1 pp_expr e2
+| Neg e -> Format.fprintf fmt "\\neg (%a)" pp_expr e
+
+let rec expr_map fn = function
+  V _ as leaf -> fn leaf
+| R _ as leaf -> fn leaf
+| Add (l,r) -> Add (expr_map fn l, expr_map fn r)
+| Sub (l,r) -> Sub (expr_map fn l, expr_map fn r)
+| Mul (l,r) -> Mul (expr_map fn l, expr_map fn r)
+| Div (l,r) -> Div (expr_map fn l, expr_map fn r)
+| Eq (l,r) -> Eq (expr_map fn l, expr_map fn r)
+| Gt (l,r) -> Gt (expr_map fn l, expr_map fn r)
+| Gte (l,r) -> Gte (expr_map fn l, expr_map fn r)
+| Lt (l,r) -> Lt (expr_map fn l, expr_map fn r)
+| Lte (l,r) -> Lte (expr_map fn l, expr_map fn r)
+| Neg e -> Neg (expr_map fn e)
 
 type formula =
   Expr of expr
@@ -216,6 +233,9 @@ let rec expr_to_z3 ctx rmap =
     let el, rmapl = expr_to_z3 ctx rmap e1 in
     let er, rmapr = expr_to_z3 ctx rmapl e2 in
     mk_le ctx el er, rmapr
+  | Neg e ->
+    let er, rmap = expr_to_z3 ctx rmap e in
+    mk_not ctx er, rmap
 
 let rec formula_to_z3 ctx rmap = function
   And (f1, f2) -> 
@@ -236,6 +256,9 @@ let rec formula_to_z3 ctx rmap = function
 | Expr (Lt _ as e)
 | Expr (Lte _ as e) ->
   expr_to_z3 ctx rmap e
+| Expr (Neg e) ->
+  let e', rmap' = expr_to_z3 ctx rmap e in
+  mk_not ctx e', rmap'
 | EqExpr (e1, e2) -> 
   let el, rmapl = expr_to_z3 ctx rmap e1 in
   let er, rmapr = expr_to_z3 ctx rmapl e2 in
@@ -256,7 +279,9 @@ let rec formula_to_z3 ctx rmap = function
   ) in
   let er,rmapr = expr_to_z3 ctx rmapl e in
   mk_eq ctx el er, rmapr
-| Expr _ -> raise (Invalid_argument "Bare expr in formula (ryCwKF)")
+| Expr e -> 
+  Debug.error "%a\n" pp_expr e;
+  raise (Invalid_argument "Bare expr in formula (ryCwKF)")
 | Q _ -> raise (Invalid_argument "Qx construction in formula (mV4WRJ)")
 
 let valid ctx f =  

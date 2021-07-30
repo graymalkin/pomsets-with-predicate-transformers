@@ -15,6 +15,7 @@ let rec pp_latex_expr fmt = function
 | Gte (e1, e2) -> Format.fprintf fmt "(%a \\geq %a)" pp_latex_expr e1 pp_latex_expr e2
 | Lt (e1, e2) -> Format.fprintf fmt "(%a \\lt %a)" pp_latex_expr e1 pp_latex_expr e2
 | Lte (e1, e2) -> Format.fprintf fmt "(%a \\leq %a)" pp_latex_expr e1 pp_latex_expr e2
+| Neg e -> Format.fprintf fmt "\\neg (%a)" pp_latex_expr e
 
 let pp_latex_formula fmt f =
   let rec go fmt = function
