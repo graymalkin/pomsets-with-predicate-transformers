@@ -3,6 +3,7 @@ open OUnit2
 open Preliminaries_test
 open Relation_test
 open PomsetPT_test
+open JctcShort_test
 
 let () =
   (* Debug.set_log_level "all"; *)
@@ -11,4 +12,6 @@ let () =
   run_test_tt_main pomset_pt_formula_suite;
   run_test_tt_main pomset_pt_utility_definitions;
   run_test_tt_main pomset_pt_candidacy;
-  run_test_tt_main pomset_pt_composiotions
+  run_test_tt_main pomset_pt_composiotions;
+
+  run_test_tt_main jctc_short_tests
