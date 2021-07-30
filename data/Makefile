@@ -1,11 +1,12 @@
 TOOL = ../_build/default/src/pomsets.exe
-OPTIONS = --tex
+OPTIONS ?= --tex --complete
 TEX_OPTIONS = --interaction=batchmode
+export TEXINPUTS := $(abspath ./latex-template/):${TEXINPUTS}
 PREAMBLE = ./latex-template/preamble.tex
 
-PROGRAMS = $(wildcard tests/*.lit)
+PROGRAMS = $(wildcard tests/*.lit) \
+	$(wildcard tests/jctc/*.lit) 
 	# $(wildcard tests/paper-examples/*.lit) \
-	# $(wildcard tests/jctc/*.lit) 
 
 TEX_SOURCES = $(shell echo $(patsubst %.lit,diagrams/%.tex,$(PROGRAMS)) | tr ' ' '\n' | sort -V)
 DIAGRAMS = $(shell echo $(patsubst %.lit,diagrams/%.pdf,$(PROGRAMS)) | tr ' ' '\n' | sort -V)
