@@ -13,14 +13,14 @@ let pp_value fmt (Val v) = Format.fprintf fmt "%d" v
 type register = Reg of string 
 [@@deriving show { with_path = false }]
 
-let register_from_id i = Reg (Format.sprintf "s_%d" i)
+let register_from_id i = Reg (Format.sprintf "s_{%d}" i)
 
 let pp_register fmt (Reg r) = Format.fprintf fmt "%s" r
 
 let fresh_register =
   let reg_id = ref 0 in
   function () ->
-    incr reg_id; Reg ("f_" ^ (string_of_int !reg_id))
+    incr reg_id; Reg (Format.sprintf "f_{%d}" !reg_id)
 
 type mem_ref = Ref of string
 [@@deriving show { with_path = false }]

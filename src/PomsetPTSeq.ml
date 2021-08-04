@@ -39,7 +39,8 @@ let rec pp_grammar fmt = function
   | Store (Ref x, am, e) -> Format.fprintf fmt "%s.store(%a, %a)" x pp_mode am pp_expr e
   | Skip -> Format.fprintf fmt "skip"
   | Sequence (p1, p2) -> Format.fprintf fmt "%a; %a" pp_grammar p1 pp_grammar p2
-  | Ite (e, p1, p2) -> Format.fprintf fmt "if(%a) { %a } else { %a }" pp_expr e pp_grammar p1 pp_grammar p2
+  | Ite (e, p1, p2) -> 
+    Format.fprintf fmt "if(%a) { %a } else { %a }" pp_expr e pp_grammar p1 pp_grammar p2
   | Par (p1, p2) -> Format.fprintf fmt "{ %a } || { %a }" pp_grammar p1 pp_grammar p2
 
 type action =
@@ -148,7 +149,7 @@ let simple_events p =
     List.length (List.filter (fun (_, e') -> e = e') p.pi) = 1
   ) p.pi)
 
-let compound_events evs pi = evs <-> (simple_events pi)
+let compound_events evs p = evs <-> (simple_events p)
 
 (** Pomset Utils *)
 let eq_pomset p1 p2 =
@@ -171,18 +172,6 @@ let empty_pomset = {
   pi = []
 }
 
-(* {
-  empty_pomset with
-  evs = [id];                                                   (* W1  *)
-  lab = bind id (Write (mode, x, v)) empty_env;                 (* W2  *)
-  pre = bind id (EqExpr (m, V v)) empty_env;                    (* W3  *)
-  pt = (fun _d f ->                                             (* W4a  *)
-        sub_loc m x f
-    |> sub_qui (EqExpr (m, V v)) (Qui x)
-  );
-  term = EqExpr (m, V v);                                       (* W5a *)
-} *)
-
 let init_pomset = 
   let id = fresh_id () in
   {
@@ -204,7 +193,7 @@ let pp_action fmt = function
 | Fence m -> Format.fprintf fmt "F(%a)" pp_mode m
 
 let pp_pomset fmt p = 
-  Format.fprintf fmt "Events: %a\n" (pp_set pp_int) p.evs;
+  Format.fprintf fmt "Events (%d): %a\n" (List.length p.evs) (pp_set pp_int) p.evs;
   List.iter (fun e ->
     Format.fprintf fmt "%d : [%a | %a]\n" e 
       pp_formula (try p.pre e with Not_found -> debug "can't pre %d (zCg7xg)\n" e; False) 
@@ -323,13 +312,10 @@ let pomsets_seq_gen ps1 ps2 =
         let pt_map1 e = try fst (List.assoc e freshened_eqr) with Not_found -> e in
         let pt_map2 e = try snd (List.assoc e freshened_eqr) with Not_found -> e in
 
-        (* TODO: This misses rules i3a-c, and might generate down-useful events which are
-            incompatible with dep. *)
-        (* let down_set = evs_new <-> (List.filter (fun e -> lab_new e = Init)) evs_new in *)
         let down_set_r1 = List.filter (is_read <.> lab_new) evs_p1 in
         let down_set_w1 = List.filter (is_write <.> lab_new) evs_p2 in
         let down_set_r2 = List.filter (is_read <.> lab_new) evs_p2 in
-        let down_set_w2 = List.filter (is_write <.> lab_new) evs_p1 |> List.filter (fun e -> lab_new e <> Init) in
+        let down_set_w2 = List.filter (fun e -> is_write (lab_new e) && lab_new e <> Init) evs_p1 in
         let down_useful = ((cross down_set_r1 down_set_w1) <|> (cross down_set_r2 down_set_w2))
           |> powerset
           |> List.map (fun du -> transitive_closure ~refl:true (ord_new <|> du))

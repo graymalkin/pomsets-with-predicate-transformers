@@ -1,6 +1,12 @@
 # Predicate Transformers for Relaxed Memory
 OCaml implementation of Predicate Transformers for Relaxed Memory.
 
+## Deficiencies
+
+ - Dependency isn't projected back through the pi relation, so the dep relation passed to RC11 is
+   incomplete in the presence of a merge. As such, the tool is weaker than it should be.
+ - The tool is failing to merge in the case of JCTC18. We have not understood why, yet.
+
 ## Build this tool
 
 This tool has been built against OCaml 4.10.0, other versions of OCaml will probably work.

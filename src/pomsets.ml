@@ -23,25 +23,13 @@ let check_outcome env bexpr =
   in
   AST.eval_bexpr (trans_env) bexpr
 
+let check_one = function 
+  AST.Allowed (bexpr, _, _) -> fun p -> check_outcome p.smap bexpr
+| AST.Forbidden (bexpr, _, _) -> fun p -> not (check_outcome p.smap bexpr)
+
 let check = function 
-  AST.Allowed (bexpr, _, _) -> List.exists (fun p -> check_outcome p.smap bexpr)
-| AST.Forbidden (bexpr, _, _) -> List.for_all (fun p -> 
-  let r = not (check_outcome p.smap bexpr) in
-  if not r then (
-    List.iter (fun e ->
-      Debug.debug "Event: [%d : %a], pre e = %a, tautology (pre e) = %b\n%!"
-        e
-        pp_action (p.lab e)
-        pp_formula (p.pre e)
-        (tautology (sub_quis True (p.pre e)))
-    ) p.evs;
-    Debug.debug "term = %a, tautology (term) = %b\n%!"
-      pp_formula p.term
-      (tautology p.term);
-    Debug.debug "%a\n" PomsetPTSeq.pp_pomset p
-  );
-  r
-)
+  AST.Allowed _ as o -> List.exists (check_one o)
+| AST.Forbidden _ as o -> List.for_all (check_one o)
 
 let dedup ps = 
   List.sort_uniq (fun p1 p2 -> 
@@ -60,6 +48,7 @@ let dedup ps =
 
 let pass = if Unix.isatty Unix.stdout then "\x1b[1;32mpass\x1b[0m" else "pass"
 let fail = if Unix.isatty Unix.stdout then "\x1b[1;31mfail\x1b[0m" else "fail"
+let pp_result fmt b = Format.fprintf fmt "%s" (if b then pass else fail)
 
 let pomsetpt (config, ast, outcomes) = 
   let config = Option.value ~default:RunConfig.default_configuration config in
@@ -87,12 +76,16 @@ let pomsetpt (config, ast, outcomes) =
       ) rc11_consistent;
     if !check_outcomes then 
       ignore @@ Option.map (List.iter (function
-        (AST.Allowed (_b,_os,c) as o)
-      | (AST.Forbidden (_b,_os,c) as o) -> 
+        (AST.Allowed (b,_os,c) as o)
+      | (AST.Forbidden (b,_os,c) as o) -> 
         ignore @@ Option.map (Format.printf "%s ") c;
-        if check o (List.map (fun (p,_,_) -> p) rc11_consistent)
-        then Format.printf "(%s)\n" pass
-        else Format.printf "(%s)\n" fail
+        let inconsistent = List.filter (fun (p,_,_) -> not (check_one o p)) rc11_consistent in
+        List.iter (fun (p, co, rf) -> 
+          Format.fprintf Format.std_formatter "%a" PomsetPTSeq.pp_pomset p;
+          Format.fprintf Format.std_formatter "rf:  %a\n" (pp_relation pp_int pp_int) rf;
+          Format.fprintf Format.std_formatter "co:  %a\n\n" (pp_relation pp_int pp_int) co
+        ) inconsistent;
+        Format.printf "%a (%a)\n" AST.pp_boolean_expr b pp_result (List.length inconsistent = 0)
       )) outcomes;
   end;
   if !print_time then Format.printf "Execution time: %fs\n" (Sys.time ());

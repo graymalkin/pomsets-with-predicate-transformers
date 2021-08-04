@@ -95,11 +95,11 @@ let pp_pomset fmt p =
   Format.fprintf fmt "%a" pp_pomset p;
   Format.fprintf fmt "\\end{verbatim}\n";
   Format.fprintf fmt "%a\n" (pp_tikz_diagram pp_tikz_pomset ~options:[
-      "sibling distance=1.5em"
-    ; "scale=1.5" 
+      "sibling distance=1em"
+    ; "scale=1" 
     ; "binary tree layout"
     ; "grow=right"
     ]) p;
   Format.fprintf fmt "\\aTerm = $ %a $\n\n" pp_latex_formula p.term;
   Format.fprintf fmt "Complete: %b\n\n" (complete { p with pre = (fun e -> sub_quis True (p.pre e)); } );
-  Format.fprintf fmt "\\noindent\\rule{6cm}{0.4pt}\n\n"
+  Format.fprintf fmt "\\clearpage\n"
