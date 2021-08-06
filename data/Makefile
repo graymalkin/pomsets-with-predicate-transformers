@@ -6,7 +6,6 @@ PREAMBLE = ./latex-template/preamble.tex
 
 PROGRAMS = $(wildcard tests/*.lit) \
 	$(wildcard tests/jctc/*.lit) 
-	# $(wildcard tests/paper-examples/*.lit) \
 
 TEX_SOURCES = $(shell echo $(patsubst %.lit,diagrams/%.tex,$(PROGRAMS)) | tr ' ' '\n' | sort -V)
 DIAGRAMS = $(shell echo $(patsubst %.lit,diagrams/%.pdf,$(PROGRAMS)) | tr ' ' '\n' | sort -V)

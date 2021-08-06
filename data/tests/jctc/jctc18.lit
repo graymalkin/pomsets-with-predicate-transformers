@@ -1,10 +1,10 @@
 name=JCTC18
-values={0,42}
+values={0,1}
 %%
 {
   r3 := x;
   if (r3 = 0) {
-    x := 42
+    x := 1
   } else { skip };
   r1 := x;
   y := r1
@@ -13,4 +13,4 @@ values={0,42}
   x := r2
 }
 %%
-allow (r1 = 42 && r2 = 42 && r3 = 42) [] "Allowed. A compiler could determine that the only legal values for x are 0 and 42. From that, the compiler could deduce that r3 != 0 implies r3 = 42.  A compiler could then determine that at r1 = x in thread 1, is must be legal for to read x and see the value 42. Changing r1 = x to r1 = 42 would allow y = r1 to be transformed to y = 42 and performed earlier, resulting in the behavior in question"
+allow (r1 = 1 && r2 = 1 && r3 = 1) [] "Allowed. A compiler could determine that the only legal values for x are 0 and 1. From that, the compiler could deduce that r3 != 0 implies r3 = 1.  A compiler could then determine that at r1 = x in thread 1, is must be legal for to read x and see the value 1. Changing r1 = x to r1 = 1 would allow y = r1 to be transformed to y = 1 and performed earlier, resulting in the behavior in question"

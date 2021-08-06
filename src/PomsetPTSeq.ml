@@ -164,7 +164,7 @@ let empty_pomset = {
   evs = [];
   lab = empty_env;
   pre = empty_env;
-  pt = (fun _ps f -> f);
+  pt = (fun _d f -> f);
   term = True;
   ord = [];
   smap = empty_env;
@@ -312,6 +312,9 @@ let pomsets_seq_gen ps1 ps2 =
         let pt_map1 e = try fst (List.assoc e freshened_eqr) with Not_found -> e in
         let pt_map2 e = try snd (List.assoc e freshened_eqr) with Not_found -> e in
 
+        (* TODO: this is a bit hairbrained. James suggests it would be better to keep track of
+        registers in the pomset foreach precondition (k) and predicate transformer (T) such that we
+        cna be really precise about which choices of ord extention are actually useful. *)
         let down_set_r1 = List.filter (is_read <.> lab_new) evs_p1 in
         let down_set_w1 = List.filter (is_write <.> lab_new) evs_p2 in
         let down_set_r2 = List.filter (is_read <.> lab_new) evs_p2 in
@@ -343,7 +346,6 @@ let pomsets_seq_gen ps1 ps2 =
               then p1pt (List.map pt_map1 p1.evs) (p2pre (pt_map2 e))
               else p1pt (down e) (p2pre (pt_map2 e))
             in
-            let tick1 e = if is_release (lab_new e) then p1term else True in
 
             (* eqr is used to map ids from p1 into ids to p2 to generate merge opportunities *)
             {
@@ -353,11 +355,11 @@ let pomsets_seq_gen ps1 ps2 =
               pre = (fun e ->
                 assert (not (List.exists (fun (_, (a, b)) -> a = e || b = e) freshened_eqr));
                 if List.mem e (List.map fst freshened_eqr)
-                then And (Or (p1pre (pt_map1 e), k2' e), tick1 e)  (* S3c *)
+                then Or (p1pre (pt_map1 e), k2' e)                 (* S3c *)
                 else (
                   if List.mem e p1.evs
                   then p1pre e                                     (* S3a *)
-                  else And (k2' e, tick1 e)                         (* S3b *)
+                  else k2' e                                       (* S3b *)
                 )
               );
 
@@ -366,7 +368,8 @@ let pomsets_seq_gen ps1 ps2 =
               );
 
               (* We have confirmed with James that this is E_1 is a good index *)
-              term = And (p1term, p1pt p1.evs p2term);           (* S5  *)
+              (* TODO: check whether the D on p1pt should be passed through pt_map1 *)
+              term = And (p1term, p1pt (List.map pt_map1 p1.evs) p2term);              (* S5  *)
               ord = du;                                             (* S6  *)
 
               (* It is important that we look in the second environment first *)
@@ -395,6 +398,7 @@ let if_gen cond ps1 ps2 =
       ) Util.id freshened_eqr 
       in
 
+      (* TODO: check what happens in the case of a double merge. Does the correct pi get built? *)
       let pi' = List.fold_left (fun pi (c, (a, b)) -> 
         (c, c) :: List.map (fun (e1, e2) -> 
           if e2 = a || e2 = b 
@@ -430,6 +434,7 @@ let if_gen cond ps1 ps2 =
 
       let pt_map1 e = try fst (List.assoc e freshened_eqr) with Not_found -> e in
       let pt_map2 e = try snd (List.assoc e freshened_eqr) with Not_found -> e in
+
       let p1pt d f = merge_registers (p1.pt d f) in
       let p2pt d f = merge_registers (p2.pt d f) in
       let p1pre e = merge_registers (p1.pre e) in
@@ -463,7 +468,7 @@ let if_gen cond ps1 ps2 =
           )
         );
         
-        term = Or (And (cond, p1term), And (Not cond, p2term));   (* I5  *)
+        term = Or (And (cond, p1term), And (Not cond, p2term));     (* I5  *)
         ord = ord_new;                                              (* I6  *)
 
         (* It is important that we look in the second environment first *)
@@ -558,8 +563,7 @@ let write_gen vs x mode m =
     {
       empty_pomset with 
       pt = (fun _d f -> sub_loc m x f |> sub_qui False (Qui x));    (* W4b *)
-      (* W5b *)
-      term = False
+      term = False                                                  (* W5b *)
     }
   ]
 
@@ -602,8 +606,10 @@ let grow_pomset (rf : (event * event) list) p =
   m7c
 
 let interp vs check_complete prog = 
+  (* TODO: 9.2! Check that p.term is lambda consistent, and p.pre(e) is lambda consistent. This
+  change would make filter stronger, and the tool faster. :flex: *)
   let filter ps = List.filter (fun p -> 
-       not (unsatisfiable p.term) 
+       not (unsatisfiable p.term)
     && List.for_all (fun e -> not (unsatisfiable (sub_quis True @@ p.pre e))) p.evs
   ) ps in
   let rec go vs = function
