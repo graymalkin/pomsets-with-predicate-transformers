@@ -310,3 +310,4 @@ let eval_formula f =
 let eval_entails f1 f2 = eval_formula (Implies (f1, f2))
 let tautology f = eval_entails True f
 let unsatisfiable f = eval_entails f False
+let satisfiable f = not (unsatisfiable f)

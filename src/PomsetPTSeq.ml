@@ -245,7 +245,7 @@ let build_extensions r1 r2 e1 e2 =
 let pomset_skip = [empty_pomset]
 
 (** We are now computing all the possible reads that could interfere, see note below. *)
-let pomsets_seq_gen ps1 ps2 =
+let sequence_rule ps1 ps2 =
   info "SEQ(PS1, PS2)\n%!";
   List.flatten @@ List.flatten @@ List.flatten (
     (cross ps1 ps2) |> List.map (fun (p1, p2) ->
@@ -383,7 +383,7 @@ let pomsets_seq_gen ps1 ps2 =
     )
   )
 
-let if_gen cond ps1 ps2 =
+let if_rule cond ps1 ps2 =
   info "IF(%a,PS1, PS2)\n%!" pp_formula cond;
   List.flatten ((cross ps1 ps2) |> List.map (fun (p1, p2) -> 
     let eqrs = List.filter (
@@ -481,7 +481,7 @@ let if_gen cond ps1 ps2 =
 
 (* This is for top level parallel only, not intended for use with code 
    sequenced after the parallel.  *)
-let par_gen ps1 ps2 = 
+let paralell_rule ps1 ps2 = 
   info "PAR(PS1, PS2) %d\n%!" ((List.length ps1) * (List.length ps2));
   (* We assume p1 and p2 to be disjoint *)
   (cross ps1 ps2) |> List.map (fun (p1, p2) -> 
@@ -505,11 +505,11 @@ let par_gen ps1 ps2 =
     }
   )
 
-let assign_gen r m = 
+let assign_rule r m = 
   info "%a := %a\n%!" pp_register r pp_expr m;
   [ { empty_pomset with pt = (fun _d f -> sub_reg m r f) } ]        (* LET *)
 
-let read_gen vs r x mode = 
+let read_rule vs r x mode = 
   info "%a := %a\n%!" pp_register r pp_mem_ref x;
   vs |> List.map (fun v ->
     let id = fresh_id () in
@@ -541,7 +541,7 @@ let read_gen vs r x mode =
     }
   ]
 
-let write_gen vs x mode m = 
+let write_rule vs x mode m = 
   info "%a := %a\n%!" pp_mem_ref x pp_expr m;
   vs |> List.map (fun v ->
     let v = Val v in
@@ -605,31 +605,39 @@ let grow_pomset (rf : (event * event) list) p =
   let m7c = List.map (fun p -> { p with ord = rtc p.evs (rf @ p.ord) }) m7b in
   m7c
 
+let register_consistent p =
+  List.for_all (fun e ->
+    let v = value_of (p.lab e) in
+    let theta = match v with
+      None -> True
+    | Some v -> EqExpr (R (register_from_id e), V v)
+    in
+    satisfiable (sub_quis True (And (theta, p.pre e)))
+  ) p.evs 
+  && satisfiable p.term
+
 let interp vs check_complete prog = 
   (* TODO: 9.2! Check that p.term is lambda consistent, and p.pre(e) is lambda consistent. This
   change would make filter stronger, and the tool faster. :flex: *)
-  let filter ps = List.filter (fun p -> 
-       not (unsatisfiable p.term)
-    && List.for_all (fun e -> not (unsatisfiable (sub_quis True @@ p.pre e))) p.evs
-  ) ps in
+  let filter ps = List.filter register_consistent ps in
   let rec go vs = function
     Initialisation -> [init_pomset]
   | Skip -> [empty_pomset]
-  | Assign (r, e) -> assign_gen r e
-  | Load (r, x, mode) -> read_gen vs r x mode
-  | Store (x, mode, e) -> write_gen vs x mode e
+  | Assign (r, e) -> assign_rule r e
+  | Load (r, x, mode) -> read_rule vs r x mode
+  | Store (x, mode, e) -> write_rule vs x mode e
   (* TODO: We can probably specialise Sequence (Initialisation, p1) to improve performance *)
   | Sequence (p1, p2) -> 
-    pomsets_seq_gen 
+    sequence_rule 
       (filter (go vs p1))
       (filter (go vs p2))
   (* Note: we expect e to be a binary expr. We do not coerce as is expected in the paper. *)
   | Ite (e, p1, p2) ->
-    if_gen (Expr e)
+    if_rule (Expr e)
       (filter (go vs p1))
       (filter (go vs p2))
   | Par (p1, p2) ->
-    par_gen 
+    paralell_rule 
       (filter (go vs p1))
       (filter (go vs p2))
   in
