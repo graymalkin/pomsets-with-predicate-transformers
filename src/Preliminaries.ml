@@ -102,7 +102,6 @@ type formula =
 | Q of quiescence
 | True
 | False
-[@@deriving show { with_path = false }]
 
 let rec pp_formula fmt = function
   Expr e -> Format.fprintf fmt "%a" pp_expr e
@@ -115,37 +114,6 @@ let rec pp_formula fmt = function
 | Q q -> Format.fprintf fmt "%a" pp_quiescence q
 | True -> Format.fprintf fmt "tt"
 | False -> Format.fprintf fmt "ff"
-
-(* let rec simp_formula f = 
-  let go = function
-      And (True, f) | And (f, True) -> simp_formula f
-    | And (False, _) | And (_, False) -> False
-    | And (f1, f2) -> And (simp_formula f1, simp_formula f2)
-    | Or (False, f) | Or (f, False) -> simp_formula f
-    | Or (True, _) | Or (_, True) -> True
-    | Or (f1, f2) -> Or (simp_formula f1, simp_formula f2)
-    | Implies (False, _) -> True
-    | Implies (True, f) -> simp_formula f
-    | Implies (f1, f2) -> Implies (simp_formula f1, simp_formula f2)
-    | Not (Not f) -> simp_formula f
-    | Not f -> Not (simp_formula f)
-    | EqExpr (e1, e2)
-    | Expr (Eq (e1, e2)) ->
-      begin
-        try
-          let v1 = eval_expr empty_env e1 in 
-          let v2 = eval_expr empty_env e1 in 
-          if v1 = v2 then True else False
-        with Not_found -> EqExpr (e1, e2)
-      end
-    | f -> f
-  in
-  fix go f *)
-
-let simp_formulae = false
-let pp_formula fmt f =
-  (* let f = if simp_formulae then simp_formula f else f in *)
-  pp_formula fmt f
 
 let rec formula_map fn = function
     Expr _ as leaf -> fn leaf
@@ -172,6 +140,18 @@ let sub_reg e r =
     | EqVar (v, e') -> EqVar (v, sub_reg_e e r e')
     | f -> f
   )
+
+let rec registers_of_formula = function
+  Expr e -> registers_of_expr e
+| EqExpr (e1, e2) -> registers_of_expr e1 <|> registers_of_expr e2
+| EqVar (_, e) -> registers_of_expr e
+| Q _ 
+| True
+| False -> []
+| Not f -> registers_of_formula f
+| And (f1, f2)
+| Or (f1, f2)
+| Implies (f1, f2) -> registers_of_formula f1 <|> registers_of_formula f2
 
 let sub_loc e l =
   formula_map (function

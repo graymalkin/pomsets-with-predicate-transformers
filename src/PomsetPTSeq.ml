@@ -133,11 +133,19 @@ type pomsetPT = {
   term: formula;                                                    (* M5  *)
   ord: (event, event) relation;                                     (* M6  *)
 
-  (* This is used to compute final state *)
-  smap: (register, value) environment;
   po: (event, event) relation;
   pi: (event, event) relation;
+
+  (* This is used to compute final state *)
+  smap: (register, value) environment;
+
+  (* For a given register, track which events might influence its value *)
+  reg_involved: (register, event set) environment;
 }
+
+(* Helpers for reg_involved *)
+let empty_ri = fun _ -> []
+let ri_union ri1 ri2 r = ri1 r <|> ri2 r
 
 let real_events p = List.map fst (List.filter (uncurry (=)) p.pi)
 let phantom_events p = (domain p.pi) <-> (real_events p)
@@ -165,9 +173,10 @@ let empty_pomset = {
   pt = (fun _d f -> f);
   term = True;
   ord = [];
-  smap = empty_env;
   po = [];
-  pi = []
+  pi = [];
+  smap = empty_env;
+  reg_involved = empty_ri;
 }
 
 let init_pomset = 
@@ -179,9 +188,10 @@ let init_pomset =
     pt = (fun _d f -> sub_locs (V (Val 0)) f |> sub_quis True);
     term = True;
     ord = [];
-    smap = empty_env;
     po = [(id, id)];
     pi = [(id, id)];
+    smap = empty_env;
+    reg_involved = empty_ri; (* TODO: should this be (fun _ -> [id]) ? *)
   }
 
 let pp_action fmt = function
@@ -370,10 +380,12 @@ let sequence_rule ps1 ps2 =
               term = And (p1term, p1pt (List.map pt_map1 p1.evs) p2term);              (* S5  *)
               ord = du;                                             (* S6  *)
 
+              po = po';
+              pi = pi';
+
               (* It is important that we look in the second environment first *)
               smap = join_env p2.smap p1.smap;
-              po = po';
-              pi = pi'
+              reg_involved = ri_union p2.reg_involved p1.reg_involved;
             }
           )
         )
@@ -469,10 +481,11 @@ let if_rule cond ps1 ps2 =
         term = Or (And (cond, p1term), And (Not cond, p2term));     (* I5  *)
         ord = ord_new;                                              (* I6  *)
 
+        po = p1.po <|> p2.po;
+        pi = pi';
         (* It is important that we look in the second environment first *)
         smap = join_env p2.smap p1.smap;
-        po = p1.po <|> p2.po;
-        pi = pi'
+        reg_involved = ri_union p2.reg_involved p1.reg_involved;
       }
     ) 
   ))
@@ -497,9 +510,11 @@ let paralell_rule ps1 ps2 =
       term = And (p1.term, p2.term);
       ord = p1.ord <|> p2.ord;
 
-      smap = join_env p1.smap p2.smap;
       po = p1.po <|> p2.po;
       pi = p1.pi <|> p2.pi;
+
+      smap = join_env p1.smap p2.smap;
+      reg_involved = ri_union p2.reg_involved p1.reg_involved;
     }
   )
 
@@ -603,21 +618,8 @@ let grow_pomset (rf : (event * event) list) p =
   let m7c = List.map (fun p -> { p with ord = rtc p.evs (rf @ p.ord) }) m7b in
   m7c
 
-let register_consistent p =
-  List.for_all (fun e ->
-    let v = value_of (p.lab e) in
-    let theta = match v with
-      None -> True
-    | Some v -> EqExpr (R (register_from_id e), V v)
-    in
-    satisfiable (sub_quis True (And (theta, p.pre e)))
-  ) p.evs 
-  && satisfiable p.term
-
 let interp vs check_complete prog = 
-  (* TODO: 9.2! Check that p.term is lambda consistent, and p.pre(e) is lambda consistent. This
-  change would make filter stronger, and the tool faster. :flex: *)
-  let filter ps = List.filter register_consistent ps in
+  let filter ps = List.filter (fun p -> satisfiable p.term) ps in
   let rec go vs = function
     Initialisation -> [init_pomset]
   | Skip -> [empty_pomset]
