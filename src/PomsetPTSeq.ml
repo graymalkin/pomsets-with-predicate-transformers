@@ -14,7 +14,6 @@ exception Unbound
 (** Preliminaries *)
 (* These prelims are specialised for the sequential version of the semantics. *)
 type mode = Rlx | Rel | Acq | SC
-[@@deriving show { with_path = false }]
 
 let pp_mode fmt = function
   Rlx -> Format.fprintf fmt "rlx"
@@ -48,7 +47,6 @@ type action =
 | Write of mode * mem_ref * value
 | Read of mode * mem_ref * value
 | Fence of mode
-[@@deriving show { with_path = false }]
 
 let mode_of = function
     Init -> Rlx
@@ -248,14 +246,14 @@ let pomset_skip = [empty_pomset]
 let sequence_rule ps1 ps2 =
   info "SEQ(PS1, PS2)\n%!";
   List.flatten @@ List.flatten @@ List.flatten (
-    (cross ps1 ps2) |> List.map (fun (p1, p2) ->
+    (cross ps1 ps2) |> List.rev_map (fun (p1, p2) ->
       (* The overlap of E1 and E2 must satisfy some compatibility predicate *)
       let eqrs = List.filter (
           List.for_all (fun (a, b) -> eq_action (p1.lab a) (p2.lab b))
         ) (pairings p1.evs p2.evs) 
       in
 
-      eqrs |> List.map (fun eqr ->
+      eqrs |> List.rev_map (fun eqr ->
         let freshened_eqr = List.map (fun eq -> (fresh_id (), eq)) eqr in
         let merge_registers = List.fold_left (fun acc (c, (a, b)) ->
           let sa, sb, sc = register_from_id a, register_from_id b, register_from_id c in
@@ -385,7 +383,7 @@ let sequence_rule ps1 ps2 =
 
 let if_rule cond ps1 ps2 =
   info "IF(%a,PS1, PS2)\n%!" pp_formula cond;
-  List.flatten ((cross ps1 ps2) |> List.map (fun (p1, p2) -> 
+  List.flatten ((cross ps1 ps2) |> List.rev_map (fun (p1, p2) -> 
     let eqrs = List.filter (
         List.for_all (fun (a, b) -> eq_action (p1.lab a) (p2.lab b))
       ) (pairings p1.evs p2.evs) 

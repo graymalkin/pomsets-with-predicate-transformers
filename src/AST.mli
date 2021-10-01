@@ -71,9 +71,7 @@ val equal_exclusivity : exclusivity -> exclusivity -> bool
 val equal_rmw_strength : rmw_strength -> rmw_strength -> bool
 
 val pp_value: Format.formatter -> value -> unit
-val show_register : register -> string
 val pp_register: Format.formatter -> register -> unit
-val show_global : global -> string
 val pp_global: Format.formatter -> global -> unit
 val pp_exclusivity : Format.formatter -> exclusivity -> unit
 val pp_rmw_strength : Format.formatter -> rmw_strength -> unit
@@ -82,10 +80,6 @@ val pp_boolean_expr: Format.formatter -> boolean_expr -> unit
 val pp_outcome : Format.formatter -> outcome -> unit
 val pp_expr: Format.formatter -> expr -> unit
 val pp_ast : Format.formatter -> ast -> unit
-
-val show_ordering : ordering -> string
-val show_exclusivity : exclusivity -> string
-val show_rmw_strength : rmw_strength -> string
 
 val list_of_pars : ast -> ast list
 

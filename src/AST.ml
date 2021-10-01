@@ -2,11 +2,18 @@
   AST for .lit files. This is the target data structure of Parse.mly
  *)
 
-type register = string [@@deriving show, eq]
+type register = string
 let pp_register fmt = Format.fprintf fmt "%s"
-type global = string [@@deriving show, eq]
+let equal_register a b = compare a b = 0
+
+type global = string
 let pp_global fmt = Format.fprintf fmt "%s"
-type value = int [@@deriving show, eq]
+let equal_global a b = compare a b = 0
+
+type value = int
+let pp_value fmt = Format.fprintf fmt "%d"
+let equal_value a b = compare a b = 0
+
 type comment = string
 
 module Satisfaction_map =
@@ -23,7 +30,7 @@ type ordering =
   | Acquire
   | Release
   | SC
-[@@deriving eq]
+let equal_ordering a b = compare a b = 0
 
 let show_ordering = function
     NonAtomic -> "na"
@@ -52,17 +59,19 @@ type boolean_expr =
   | Negation of boolean_expr
 
 (* Required for IMM *)
-type exclusivity = Exclusive | NotExclusive [@@deriving eq]
+type exclusivity = Exclusive | NotExclusive
 let show_exclusivity = function
     Exclusive -> "ex"
   | NotExclusive -> "not-ex"
 let pp_exclusivity fmt e = Format.fprintf fmt "%s" (show_exclusivity e)
+let equal_exclusivity a b = compare a b = 0
 
-type rmw_strength = Normal | Strong [@@deriving eq]
+type rmw_strength = Normal | Strong
 let show_rmw_strength = function
     Normal -> "normal"
   | Strong -> "strong"
 let pp_rmw_strength fmt s = Format.fprintf fmt "%s" (show_rmw_strength s)
+let equal_rmw_strength a b = compare a b = 0
 
 type ast =
     Skip

@@ -3,7 +3,6 @@
 (executables
   (names pomsets test)
   (modes byte exe)
-  (preprocess (pps ppx_deriving.show ppx_deriving.eq))
   (flags -w +a-4-42-44-48-50-58-32-60@8)
   (libraries 
     batteries

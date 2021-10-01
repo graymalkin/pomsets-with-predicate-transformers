@@ -1,3 +1,5 @@
+open Relation
+
 open Z3
 open Z3.Solver
 open Z3.Arithmetic
@@ -6,12 +8,10 @@ open Z3.Boolean
 type event = int
 
 type value = Val of int
-[@@deriving show { with_path = false }]
 
 let pp_value fmt (Val v) = Format.fprintf fmt "%d" v
 
 type register = Reg of string 
-[@@deriving show { with_path = false }]
 
 let register_from_id i = Reg (Format.sprintf "s_{%d}" i)
 
@@ -23,12 +23,10 @@ let fresh_register =
     incr reg_id; Reg (Format.sprintf "f_{%d}" !reg_id)
 
 type mem_ref = Ref of string
-[@@deriving show { with_path = false }]
 
 let pp_mem_ref fmt (Ref x) = Format.fprintf fmt "%s" x
 
 type quiescence = Qui of mem_ref
-[@@deriving show { with_path = false }]
 
 let pp_quiescence fmt (Qui x) = Format.fprintf fmt "Q(%a)" pp_mem_ref x
 
@@ -45,7 +43,6 @@ type expr =
 | Lt of expr * expr
 | Lte of expr * expr
 | Neg of expr
-[@@deriving show { with_path = false }]
 
 let rec eval_expr env = function
   V (Val v) -> v
@@ -88,6 +85,11 @@ let rec expr_map fn = function
 | Lt (l,r) -> Lt (expr_map fn l, expr_map fn r)
 | Lte (l,r) -> Lte (expr_map fn l, expr_map fn r)
 | Neg e -> Neg (expr_map fn e)
+
+let registers_of_expr f =
+  let acc = ref [] in
+  ignore @@ expr_map (function R r -> acc := r :: !acc; R r | f -> f) f;
+  !acc
 
 type formula =
   Expr of expr

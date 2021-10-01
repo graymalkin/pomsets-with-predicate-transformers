@@ -10,10 +10,12 @@ open Relation
 open Util
 
 type amode = Rlx | RA | SC
-[@@deriving show { with_path = false }]
+let show_amode = function Rlx -> "rlx" | RA -> "ra" | SC -> "sc"
+let pp_amode fmt m = Format.fprintf fmt "%s" (show_amode m)
 
 type fmode = Acq | Rel | AR
-[@@deriving show { with_path = false }]
+let show_fmode = function Acq -> "acq" | Rel -> "rel" | AR -> "ar"
+let pp_fmode fmt m = Format.fprintf fmt "%s" (show_fmode m)
 
 type grammar = 
   Assign of register * expr

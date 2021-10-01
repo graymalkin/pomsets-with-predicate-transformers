@@ -5,15 +5,12 @@
 open Util
 
 type 'a set = 'a list
-[@@deriving show, eq]
 
 type ('a, 'b) env = ('a -> 'b)
 
 type ('a, 'b) edge = ('a * 'b)
-[@@deriving show,eq]
 
 type ('a, 'b) relation = (('a, 'b) edge) set
-[@@deriving show, eq]
 
 include PPRelation
 
@@ -99,6 +96,7 @@ let subset eq a b =
   List.for_all (fun y -> BatList.mem_cmp cmp y b) a
 
 let equal_set eq a b = subset eq a b && subset eq b a
+let equal_relation eq1 eq2 a b = subset eq1 a b && subset eq2 b a 
 
 let reflexive d r = subset (=) (rel_of_set d) r
 
