@@ -21,7 +21,7 @@ let print_time = ref false
 
 let model_of_string = function
   "pwt" | "PwT" -> PwT
-| "rc11" | "RC11" -> RC11
+| "rc11" | "RC11" | "PwTc" | "pwtc" -> RC11
 | "mca" | "MCA" | "mca1" | "MCA1" -> MCA1 
 | _ -> failwith "invalid model name. (1idyKA)"
 let set_model s = use_model := model_of_string s
@@ -99,10 +99,10 @@ let pomsetpt (config, ast, outcomes) =
   info "Checking RC11 consistency\n%!";
   if not !check_complete && not !print_latex && !print_pomsets then
     List.iter (Format.printf "%a\n" pp_pomset) (dedup ps);
-  match !use_model with
+  (match !use_model with
     RC11 -> check_rc11 outcomes ps 
   | PwT -> check_pwt outcomes ps 
-  | MCA1 -> ignore @@ failwith "todo (6BnJPF)";
+  | MCA1 -> ignore @@ failwith "todo (6BnJPF)");
   if !print_time then Format.printf "Execution time: %fs\n" (Sys.time ());
   ()
 
@@ -113,15 +113,13 @@ let run_s s = pomsetpt (Parse.parse_string s)
 let args = Arg.align [
   ("--check", Arg.Set check_outcomes, "  Check that pomsets generated satisfy the litmus assertion")
 ; ("--complete", Arg.Set check_complete, "  Print only completed pomsets")
-; ("--log", Arg.String Util.set_log_level, "<level>  Set the log level as one of {all, info, debug, warn, error, none} [default: none]")
-; ("--log-time", Arg.Set Util.log_times, "  Include time stamps in log output")
 ; ("--model", Arg.String set_model, "<model>  Select a version of the model from {PwT, RC11, MCA1} [default: PwT]")
 ; ("--program", Arg.Rest run_s, "<program>  Interpret a program from the command line.")
 ; ("--print", Arg.Set print_pomsets, "  Pretty print pomsets")
 ; ("--size", Arg.Set print_size, "  Print the number of completed pomsets")
 ; ("--tex", Arg.Set print_latex, "  Use LaTeX output")
 ; ("--time", Arg.Set print_time, "  Show execution time")
-]
+] @ Debug.args
 
 let usage () =
   Format.sprintf "%s [OPTIONS] <FILENAME>" (Array.get Sys.argv 0)

@@ -1,12 +1,6 @@
 # Predicate Transformers for Relaxed Memory
 OCaml implementation of Predicate Transformers for Relaxed Memory.
 
-## Deficiencies
-
- - Dependency isn't projected back through the pi relation, so the dep relation passed to RC11 is
-   incomplete in the presence of a merge. As such, the tool is weaker than it should be.
- - The tool is failing to merge in the case of JCTC18. We have not understood why, yet.
-
 ## Build this tool
 
 This tool has been built against OCaml 4.10.0, other versions of OCaml will probably work.
@@ -57,14 +51,16 @@ allow (r1 = 0) [] ""
 
 ```
 ./_build/default/src/pomsets.exe [OPTIONS] <FILENAME>
-  --check      Check that pomsets generated satisfy the litmus assertion [default: false]
-  --complete   Print only completed pomsets [default: false]
-  --log        Set the log level as one of {all, info, debug, warn, error, none} [default: none]
-  --log-time   Include time stamps in log output [default: false]
-  --program    Interpret a program from the command line.
-  --size       Print the number of completed pomsets [default: false]
-  --tex        Use LaTeX output [default: false]
-  --time       Show execution time [default: false]
-  -help        Display this list of options
-  --help       Display this list of options
+  --check              Check that pomsets generated satisfy the litmus assertion
+  --complete           Print only completed pomsets
+  --log <level>        Set the log level as one of {all, info, debug, warn, error, none} [default: none]
+  --log-time           Include time stamps in log output
+  --model <model>      Select a version of the model from {PwT, RC11, MCA1} [default: PwT]
+  --program <program>  Interpret a program from the command line.
+  --print              Pretty print pomsets
+  --size               Print the number of completed pomsets
+  --tex                Use LaTeX output
+  --time               Show execution time
+  -help                Display this list of options
+  --help               Display this list of options
 ```

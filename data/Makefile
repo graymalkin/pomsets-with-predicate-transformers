@@ -4,14 +4,12 @@ TEX_OPTIONS = --interaction=batchmode
 export TEXINPUTS := $(abspath ./latex-template/):${TEXINPUTS}
 PREAMBLE = ./latex-template/preamble.tex
 
-PROGRAMS = \
-	$(wildcard tests/test6/*.lit) #\
-#	$(wildcard tests/jctc/*.lit) 
-# $(wildcard tests/*.lit) 
+PROGRAMS = $(wildcard tests/jctc/*.lit)
 
 TEX_SOURCES = $(shell echo $(patsubst %.lit,diagrams/%.tex,$(PROGRAMS)) | tr ' ' '\n' | sort -V)
 DIAGRAMS = $(shell echo $(patsubst %.lit,diagrams/%.pdf,$(PROGRAMS)) | tr ' ' '\n' | sort -V)
-DERIVATIONS = $(shell echo $(patsubst %.lit,diagrams/%.deriv,$(PROGRAMS)) | tr ' ' '\n' | sort -V))
+DERIVATIONS = $(shell echo $(patsubst %.lit,diagrams/%-pwt.deriv,$(PROGRAMS)) | tr ' ' '\n' | sort -V)) \
+	$(shell echo $(patsubst %.lit,diagrams/%-pwtc.deriv,$(PROGRAMS)) | tr ' ' '\n' | sort -V))
 
 .PRECIOUS: $(TOOL)
 
@@ -22,8 +20,14 @@ tool:
 
 check: $(DERIVATIONS)
 
-diagrams/%.deriv : %.lit $(TOOL)
-	$(TOOL) --check --complete $< > $@
+diagrams/%-pwt.deriv : %.lit $(TOOL)
+	@mkdir -p $(dir $@)
+	$(TOOL) --model pwt --time --check --complete $< > $@
+	@cat $@
+
+diagrams/%-pwtc.deriv : %.lit $(TOOL)
+	@mkdir -p $(dir $@)
+	$(TOOL) --model pwtc --time --check --complete $< > $@
 	@cat $@
 
 diagrams/%.tex: %.lit $(TOOL) $(PREAMBLE)

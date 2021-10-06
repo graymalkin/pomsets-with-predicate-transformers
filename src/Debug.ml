@@ -47,10 +47,15 @@ let set_log_level = function
     warn_fmt := discard_fmt;
     error_fmt := Format.err_formatter
 
-| "nolog" -> 
+| "none" | "nolog" -> 
     info_fmt := discard_fmt;
     debug_fmt := discard_fmt;
     warn_fmt := discard_fmt;
     error_fmt := discard_fmt
 
 | s -> warn "%s is an invalid log level" s
+
+let args = [
+  ("--log", Arg.String set_log_level, "<level>  Set the log level as one of {all, info, debug, warn, error, none} [default: none]")
+; ("--log-time", Arg.Set log_times, "  Include time stamps in log output")
+]
